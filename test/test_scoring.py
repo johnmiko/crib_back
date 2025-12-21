@@ -1,6 +1,6 @@
 import unittest
-import scoring
-import playingcards as pc
+from cribbage import scoring
+from cribbage import playingcards as pc
 
 
 class TestPairScoring(unittest.TestCase):

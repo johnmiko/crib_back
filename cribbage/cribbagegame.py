@@ -1,8 +1,8 @@
 """Cribbage game."""
 import random
-import scoring
-from player import HumanPlayer, RandomPlayer
-from playingcards import Deck
+from . import scoring
+from .player import HumanPlayer, RandomPlayer
+from .playingcards import Deck
 
 DEBUG = True  # Debug flag for debugging output
 

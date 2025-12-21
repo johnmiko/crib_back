@@ -1,5 +1,5 @@
 import unittest
-from playingcards import Card, Deck
+from cribbage.playingcards import Card, Deck
 
 
 class TestCardClass(unittest.TestCase):
