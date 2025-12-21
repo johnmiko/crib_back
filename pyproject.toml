@@ -21,3 +21,7 @@ include = ["cribbage*"]
 testpaths = ["test"]
 python_files = ["test_*.py"]
 addopts = "-q"
+
+[tool.ruff]
+lint.select = ["F401"]  # F401 = unused imports
+fix = true

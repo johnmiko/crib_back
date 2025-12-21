@@ -1,5 +1,8 @@
-from .player import HumanPlayer, RandomPlayer
-from .cribbagegame import CribbageGame
+
+
+
+from cribbage.cribbagegameapi import CribbageGame
+from cribbage.player import HumanPlayer, RandomPlayer
 
 
 def main():
