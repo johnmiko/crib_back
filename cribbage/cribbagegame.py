@@ -170,15 +170,8 @@ class CribbageRound:
                             "Value of cards on table must be <= 31 to be eligible for scoring."
                         score = self._score_play(card_seq=[move['card'] for move in self.table[sequence_start_idx:]])
                         if score:
-                            self.game.board.peg(p, score)
-            # If both players have reached 31 or "go" and not run out of cards, continue play
-            if len(active_players) == 0:
-                player_of_last_card = self.table[-1]['player']
-                self.game.board.peg(player_of_last_card, 1)
-                print("Point to %s for last card played." % player_of_last_card)
-                active_players = [p for p in self.game.players if p != player_of_last_card and self.hands[p]]
-                if self.hands[player_of_last_card]:
-                    active_players += [player_of_last_card]
+                            self.game.board.peg(p, score)            
+            self.go_or_31_reached(active_players)
 
         # Score each player's hand
         for p in self.game.players:
@@ -193,6 +186,16 @@ class CribbageRound:
         score = self._score_hand(cards=(self.crib + [self.starter]))  # Include starter card as part of crib
         if score:
             self.game.board.peg(self.dealer, score)
+
+    def go_or_31_reached(self, active_players):
+        # If both players have reached 31 or "go" and not run out of cards, continue play
+        if len(active_players) == 0:
+            player_of_last_card = self.table[-1]['player']
+            self.game.board.peg(player_of_last_card, 1)
+            print("Point to %s for last card played." % player_of_last_card)
+            active_players = [p for p in self.game.players if p != player_of_last_card and self.hands[p]]
+            if self.hands[player_of_last_card]:
+                active_players += [player_of_last_card]
 
     def _score_play(self, card_seq):
         """Return score for latest move in an active play sequence.

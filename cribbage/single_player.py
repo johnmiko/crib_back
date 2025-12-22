@@ -1,7 +1,7 @@
 
 
 
-from cribbage.cribbagegameapi import CribbageGame
+from cribbage.cribbagegame import CribbageGame
 from cribbage.player import HumanPlayer, RandomPlayer
 
 
