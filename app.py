@@ -189,7 +189,7 @@ class ResumableRound:
                 if score:
                     r.game.board.peg(p, score)
             
-            score = r._score_hand(cards=(r.crib + [r.starter]))
+            score = r._score_hand(cards=(r.crib + [r.starter]), is_crib=True)
             if score:
                 r.game.board.peg(r.dealer, score)
             
@@ -247,6 +247,8 @@ class GameSession:
         # One-time overrides for next new round
         self.next_dealer_override: Optional[Player] = None
         self.next_round_overrides: Dict = {}
+        # Last round summary for client pause
+        self.last_round_summary: Optional[Dict] = None
         
     def get_state(self) -> GameStateResponse:
         """Get current game state."""
@@ -260,15 +262,14 @@ class GameSession:
         if self.current_round:
             your_hand = [card_to_data(c) for c in self.current_round.hands.get(self.human, [])]
             computer_hand = [card_to_data(c) for c in self.current_round.hands.get(self.computer, [])]
-            table_cards = [card_to_data(m['card']) for m in self.current_round.table]
+            
+            # Use the active sequence_start_idx to show only the current sequence
+            sequence_start = getattr(self.current_round, 'sequence_start_idx', 0)
+            
+            # Table cards should only show the current sequence (cleared after go/31)
+            table_cards = [card_to_data(m['card']) for m in self.current_round.table[sequence_start:]]
             
             if self.current_round.table:
-                # Use the active sequence_start_idx tracked by the resumable round
-                sequence_start = getattr(self.current_round, 'sequence_start_idx', None)
-                if sequence_start is None:
-                    # Fallback: if we can't determine the sequence start, 
-                    # conservatively show 0 (should rarely happen)
-                    sequence_start = len(self.current_round.table)
                 table_value = sum(m['card'].get_value() for m in self.current_round.table[sequence_start:])
 
             
@@ -305,6 +306,7 @@ class GameSession:
             message=self.message,
             your_hand=your_hand,
             computer_hand=computer_hand,
+            computer_hand_count=len(computer_hand) if computer_hand else 0,
             table_cards=table_cards,
             scores=scores_dict,
             dealer=dealer,
@@ -312,7 +314,8 @@ class GameSession:
             starter_card=starter_card,
             valid_card_indices=valid_indices,
             game_over=self.game_over,
-            winner=winner
+            winner=winner,
+            round_summary=self.last_round_summary
         )
     
     def start_new_round(self):
@@ -340,16 +343,39 @@ class GameSession:
             self.current_round.run()
             
             # If we reach here without exception, round completed
+            # Build round summary and pause for user acknowledgement
+            r = self.current_round.round
+            summary_hands: Dict[str, List[Card]] = {}
+            summary_points: Dict[str, int] = {}
+
+            # Hands with starter for scoring context
+            for p in self.game.players:
+                played_cards = [move['card'] for move in r.table if move['player'] == p]
+                hand_cards = played_cards + ([r.starter] if r.starter else [])
+                summary_hands[_to_frontend_name(p)] = [card_to_data(c) for c in hand_cards]
+                summary_points[_to_frontend_name(p)] = r._score_hand(hand_cards)
+
+            # Crib
+            crib_cards = r.crib + ([r.starter] if r.starter else [])
+            summary_hands['crib'] = [card_to_data(c) for c in crib_cards]
+            summary_points['crib'] = r._score_hand(crib_cards, is_crib=True)
+
+            self.last_round_summary = {
+                'hands': summary_hands,
+                'points': summary_points,
+            }
+
             # Check if game is over
             for p in self.game.players:
                 if self.game.board.get_score(p) >= 121:
                     self.game_over = True
                     self.message = f"Game over! {p} wins!"
                     return self.get_state()
-            
-            # Start new round
-            self.current_round = None
-            return self.advance()
+
+            # Pause before starting next round
+            self.waiting_for = ActionType.ROUND_COMPLETE
+            self.message = "Round complete. Review hands and continue."
+            return self.get_state()
             
         except AwaitingPlayerInput as e:
             # Game paused waiting for player input
@@ -379,6 +405,12 @@ class GameSession:
                 selection = str(card_indices[0] + 1)
             else:
                 raise HTTPException(status_code=400, detail="Must select 0 or 1 card to play")
+        elif self.waiting_for == ActionType.ROUND_COMPLETE:
+            # User acknowledged round summary; start next round
+            self.waiting_for = None
+            self.current_round = None
+            self.last_round_summary = None
+            return self.advance()
         else:
             raise HTTPException(status_code=400, detail="No action required")
         

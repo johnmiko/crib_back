@@ -11,6 +11,7 @@ class ActionType(str, Enum):
     SELECT_CRIB_CARDS = "select_crib_cards"
     SELECT_CARD_TO_PLAY = "select_card_to_play"
     WAITING_FOR_COMPUTER = "waiting_for_computer"
+    ROUND_COMPLETE = "round_complete"
     GAME_OVER = "game_over"
 
 
@@ -42,3 +43,5 @@ class GameStateResponse(BaseModel):
     valid_card_indices: List[int]  # Which cards from hand can be played
     game_over: bool = False
     winner: Optional[str] = None
+    computer_hand_count: Optional[int] = None
+    round_summary: Optional[Dict] = None

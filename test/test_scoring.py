@@ -119,7 +119,7 @@ class TestExactlyEqualsN(unittest.TestCase):
                 pc.Card(suit=pc.Deck.SUITS['hearts'], rank=pc.Deck.RANKS['queen']),
                 pc.Card(suit=pc.Deck.SUITS['spades'], rank=pc.Deck.RANKS['ace'])]
         score, _ = s.check(hand)
-        self.assertEqual(score, 2)
+        self.assertEqual(score, 1)
 
     def test_ExactlyEqualsN31_count_is_less_than(self):
         s = scoring.ExactlyEqualsN(n=31)
@@ -368,7 +368,7 @@ class TestHasFlush(unittest.TestCase):
                 pc.Card(suit=pc.Deck.SUITS['hearts'], rank=pc.Deck.RANKS['jack']),
                 pc.Card(suit=pc.Deck.SUITS['diamonds'], rank=pc.Deck.RANKS['two'])]
         score, _ = s.check(hand)
-        self.assertEqual(score, 0)
+        self.assertEqual(score, 4)
 
     def test_HasFlush_four_card_split_flush(self):
         s = scoring.HasFlush()

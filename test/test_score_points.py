@@ -2,6 +2,8 @@
 
 import logging
 from app import GameSession, ResumableRound
+from cribbage.cribbagegame import CribbageRound, CribbageGame
+from cribbage.player import RandomPlayer
 from cribbage.playingcards import Deck, Card
 from cribbage.models import ActionType
 
@@ -183,3 +185,80 @@ def test_scoring_pairs_and_fifteens(deterministic_computer):
     assert state2.scores['computer'] == 2
 
     logging.info("Deterministic scoring verified: 15 and pair both score 2 points")
+
+
+def test_reaching_31_awards_two_points_total():
+    """Reaching exactly 31 should peg 1 (for 31) + 1 (for last card)."""
+    game = CribbageGame(players=[RandomPlayer("human"), RandomPlayer("computer")])
+    round_obj = CribbageRound(game=game, dealer=game.players[1])
+
+    human = game.players[0]
+
+    two_d = _make_card('two', 'diamonds')  # Will be played to reach 31
+    table_cards = [
+        {'player': human, 'card': _make_card('ten', 'hearts')},
+        {'player': game.players[1], 'card': _make_card('nine', 'clubs')},
+        {'player': human, 'card': _make_card('ten', 'spades')},
+        {'player': human, 'card': two_d},  # makes 31
+    ]
+
+    round_obj.table = table_cards
+    round_obj.hands = {human: [], game.players[1]: []}
+
+    # Reset scores to zero for clarity
+    game.board.pegs[human]['front'] = 0
+    game.board.pegs[human]['rear'] = 0
+    game.board.pegs[game.players[1]]['front'] = 0
+    game.board.pegs[game.players[1]]['rear'] = 0
+
+    # Score reaching 31
+    points_for_31 = round_obj._score_play([move['card'] for move in table_cards])
+    if points_for_31:
+        game.board.peg(human, points_for_31)
+
+    # Both players are out of cards; last card point should be added
+    round_obj.go_or_31_reached(active_players=[])
+
+    assert game.board.get_score(human) == 2
+    assert game.board.get_score(game.players[1]) == 0
+
+
+def test_runs_out_of_order_scoring():
+    """Unit-score runs during play: 1,3,2 -> 3; then +4 with 4; then +3 with 3."""
+    game = CribbageGame(players=[RandomPlayer("human"), RandomPlayer("computer")])
+    r = CribbageRound(game=game, dealer=game.players[1])
+
+    a_h = _make_card('ace', 'hearts')
+    two_d = _make_card('two', 'diamonds')
+    three_s = _make_card('three', 'spades')
+    four_c = _make_card('four', 'clubs')
+
+    assert r._score_play([a_h, three_s, two_d]) == 3
+    assert r._score_play([a_h, three_s, two_d, four_c]) == 4
+    # Adding another 3 should form a new 3-run among the last 3 distinct ranks
+    assert r._score_play([a_h, three_s, two_d, four_c, _make_card('three', 'hearts')]) == 3
+
+
+def test_three_of_a_kind_scores_six():
+    """Unit-score: on third same-rank card, score 6 for the play."""
+    game = CribbageGame(players=[RandomPlayer("human"), RandomPlayer("computer")])
+    r = CribbageRound(game=game, dealer=game.players[1])
+
+    seven_h = _make_card('seven', 'hearts')
+    seven_d = _make_card('seven', 'diamonds')
+    seven_s = _make_card('seven', 'spades')
+
+    assert r._score_play([seven_h, seven_d, seven_s]) == 6
+
+
+def test_four_of_a_kind_scores_twelve():
+    """Unit-score: on fourth same-rank card, score 12 for the play."""
+    game = CribbageGame(players=[RandomPlayer("human"), RandomPlayer("computer")])
+    r = CribbageRound(game=game, dealer=game.players[1])
+
+    nine_h = _make_card('nine', 'hearts')
+    nine_d = _make_card('nine', 'diamonds')
+    nine_s = _make_card('nine', 'spades')
+    nine_c = _make_card('nine', 'clubs')
+
+    assert r._score_play([nine_h, nine_d, nine_s, nine_c]) == 12

@@ -177,13 +177,13 @@ class CribbageRound:
         for p in self.game.players:
             p_cards_played = [move['card'] for move in self.table if move['player'] == p]
             print("Scoring " + str(p) + "'s hand: " + str(p_cards_played + [self.starter]))
-            score = self._score_hand(cards=p_cards_played + [self.starter])  # Include starter card as part of hand
+            score = self._score_hand(cards=p_cards_played + [self.starter], is_crib=False)  # Include starter card as part of hand
             if score:
                 self.game.board.peg(p, score)
 
         # Score the crib
         print("Scoring the crib: " + str(self.crib + [self.starter]))
-        score = self._score_hand(cards=(self.crib + [self.starter]))  # Include starter card as part of crib
+        score = self._score_hand(cards=(self.crib + [self.starter]), is_crib=True)  # Include starter card as part of crib
         if score:
             self.game.board.peg(self.dealer, score)
 
@@ -216,7 +216,7 @@ class CribbageRound:
             print("[SCORE] " + desc) if desc else None
         return score
 
-    def _score_hand(self, cards):
+    def _score_hand(self, cards, is_crib: bool = False):
         """Score a hand at the end of a round.
 
         :param cards: Cards in a single player's hand.
@@ -224,7 +224,7 @@ class CribbageRound:
         """
         score = 0
         score_scenarios = [scoring.CountCombinationsEqualToN(n=15),
-                           scoring.HasPairTripleQuad(), scoring.HasStraight_InHand(), scoring.HasFlush()]
+                           scoring.HasPairTripleQuad(), scoring.HasStraight_InHand(), scoring.HasFlush(is_crib=is_crib)]
         for scenario in score_scenarios:
             s, desc = scenario.check(cards[:])
             score += s

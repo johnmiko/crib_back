@@ -47,7 +47,11 @@ class ExactlyEqualsN(ScoreCondition):
 
     def check(self, cards):
         value = sum(i.get_value() for i in cards)
-        score = 2 if value == self.n else 0
+        if value == self.n:
+            # ACC rules give 2 for 15; treat 31 as 1 to avoid double-counting with last-card point
+            score = 1 if self.n == 31 else 2
+        else:
+            score = 0
         description = "%d count" % self.n if score else ""
         return score, description
 
@@ -124,10 +128,34 @@ class CountCombinationsEqualToN(ScoreCondition):
 
 
 class HasFlush(ScoreCondition):
+    def __init__(self, is_crib: bool = False):
+        super().__init__()
+        self.is_crib = is_crib
+
     def check(self, cards):
-        card_suits = [card.get_suit() for card in cards]
-        suit_count = card_suits.count(cards[-1].get_suit())
-        score = suit_count if suit_count >= 4 else 0
+        if len(cards) < 4:
+            return 0, ""
+
+        score = 0
+        suits = [card.get_suit() for card in cards]
+
+        if self.is_crib:
+            # Crib flush only scores when all five match (hand + starter)
+            if len(cards) == 5 and len(set(suits)) == 1:
+                score = 5
+        else:
+            # Standard hand flush: 4 for four-card flush; +1 if starter also matches when present
+            if len(cards) == 5:
+                hand_suits = suits[:-1]
+                starter_suit = suits[-1]
+                if len(set(hand_suits)) == 1:
+                    score = 4 + (1 if starter_suit == hand_suits[0] else 0)
+            # Fallback: count cards matching the suit of the latest card (legacy behavior)
+            if score == 0:
+                target_suit = suits[-1]
+                suit_count = suits.count(target_suit)
+                score = suit_count if suit_count >= 4 else 0
+
         assert score < 6, "Flush score exceeded 5"
-        description = "" if score < 4 else ("%d-card flush" % score)
+        description = "" if score == 0 else ("%d-card flush" % score)
         return score, description

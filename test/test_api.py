@@ -136,6 +136,15 @@ def test_play_full_game_to_completion():
             assert action_resp.status_code == 200
             state = action_resp.json()
             total_actions += 1
+        elif state["action_required"] == "round_complete":
+            action_resp = client.post(
+                f"/game/{game_id}/action",
+                json={"card_indices": []},
+            )
+            assert action_resp.status_code == 200
+            state = action_resp.json()
+            rounds_played += 1
+            total_actions += 1
         elif state["action_required"] == "waiting_for_computer":
             raise AssertionError(f"Game stuck waiting for computer after {total_actions} actions")
         else:

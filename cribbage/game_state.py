@@ -289,7 +289,7 @@ class GameState:
         self.scores["computer"] += comp_score
         
         # Score crib (belongs to dealer)
-        crib_score = self._score_hand(self.crib + [self.starter])
+        crib_score = self._score_hand(self.crib + [self.starter], is_crib=True)
         self.scores[self.dealer] += crib_score
         
         self.last_message = f"Hand scoring: You: {you_score}, Computer: {comp_score}, Crib: {crib_score} (to {self.dealer})"
@@ -309,14 +309,14 @@ class GameState:
             self.dealer = "computer" if self.dealer == "you" else "you"
             self.start_round()
     
-    def _score_hand(self, cards: List[Card]) -> int:
+    def _score_hand(self, cards: List[Card], is_crib: bool = False) -> int:
         """Score a hand."""
         score = 0
         score_scenarios = [
             scoring.CountCombinationsEqualToN(n=15),
             scoring.HasPairTripleQuad(),
             scoring.HasStraight_InHand(),
-            scoring.HasFlush()
+            scoring.HasFlush(is_crib=is_crib)
         ]
         for scenario in score_scenarios:
             s, _ = scenario.check(cards[:])
