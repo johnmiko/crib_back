@@ -1,8 +1,8 @@
 """Database configuration and models for Crib statistics."""
 import os
 from typing import Optional
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, func
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
+from sqlalchemy import create_engine, DateTime, func
+from sqlalchemy.orm import sessionmaker, Session, declarative_base, Mapped, mapped_column
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -29,26 +29,26 @@ class User(Base):
     """Authenticated user records sourced from Google SSO."""
     __tablename__ = "users"
 
-    id = Column(String, primary_key=True, index=True)  # Google 'sub' as stable id
-    email = Column(String, index=True, nullable=True)
-    name = Column(String, nullable=True)
-    picture = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    id: Mapped[str] = mapped_column(primary_key=True, index=True)  # Google 'sub' as stable id
+    email: Mapped[str | None] = mapped_column(index=True, nullable=True)
+    name: Mapped[str | None] = mapped_column(nullable=True)
+    picture: Mapped[str | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
 
 class GameResult(Base):
     """Track individual game results with detailed statistics for users."""
     __tablename__ = "game_results"
     
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, index=True, nullable=False)
-    opponent_id = Column(String, index=True, nullable=False)
-    win = Column(Boolean, nullable=False)  # True if player won, False if lost
-    average_points_pegged = Column(Float, nullable=False)  # avg points per pegging round
-    average_hand_score = Column(Float, nullable=False)  # avg points per hand played
-    average_crib_score = Column(Float, nullable=False)  # avg crib points when dealer
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(index=True)
+    opponent_id: Mapped[str] = mapped_column(index=True)
+    win: Mapped[bool] = mapped_column()  # True if player won, False if lost
+    average_points_pegged: Mapped[float] = mapped_column()  # avg points per hand
+    average_hand_score: Mapped[float] = mapped_column()
+    average_crib_score: Mapped[float] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 def init_db():
@@ -81,7 +81,7 @@ def upsert_google_user(user_id: str, email: Optional[str], name: Optional[str], 
 
 
 
-def get_db() -> Session:
+def get_db() -> Session | None:
     """Get database session. Returns None if no database configured."""
     if SessionLocal is None:
         return None
@@ -162,9 +162,7 @@ def get_user_stats(user_id: str) -> list:
         return []
     
     try:
-        records = db.query(GameResult).filter(
-            GameResult.user_id == user_id
-        ).all()
+        records = db.query(GameResult).filter(GameResult.user_id == user_id).all()
         
         # Aggregate stats by opponent
         opponent_stats = {}
@@ -182,7 +180,7 @@ def get_user_stats(user_id: str) -> list:
                 }
             
             stats = opponent_stats[opp_id]
-            if r.win:
+            if bool(r.win):
                 stats["wins"] += 1
             else:
                 stats["losses"] += 1
@@ -210,7 +208,7 @@ def get_user_stats(user_id: str) -> list:
         db.close()
 
 
-def get_game_history(user_id: str, opponent_id: str = None, limit: int = 50) -> list:
+def get_game_history(user_id: str, opponent_id: str | None = None, limit: int = 50) -> list:
     """
     Get individual game history for a user (useful for charting).
     
@@ -242,7 +240,7 @@ def get_game_history(user_id: str, opponent_id: str = None, limit: int = 50) -> 
                 "average_points_pegged": r.average_points_pegged,
                 "average_hand_score": r.average_hand_score,
                 "average_crib_score": r.average_crib_score,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "created_at": r.created_at.isoformat() if r.created_at is not None else None,
             }
             for r in records
         ]

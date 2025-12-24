@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, Optional, List, Literal
+from typing import Dict, Optional, List, Literal, Any
 from contextlib import asynccontextmanager
 import uuid
 
@@ -11,7 +11,8 @@ from cribbage.player import Player, RandomPlayer
 from cribbage.models import ActionType, GameStateResponse, PlayerAction, CardData
 from cribbage.playingcards import Card, Deck
 from cribbage.opponents import get_opponent_strategy, list_opponent_types, OpponentStrategy
-from database import init_db, record_match_result, get_user_stats, get_game_history, upsert_google_user
+from database import init_db, record_match_result, get_user_stats, get_game_history as db_get_game_history, upsert_google_user
+import os
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from pydantic import BaseModel
@@ -27,6 +28,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# Strict audience for Google ID token verification
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
 # Configure CORS - allow localhost for development and production domains
 # Note: When allow_credentials=True, allow_origins cannot be ["*"]
@@ -436,6 +440,7 @@ class GameSession:
             # Start new round if needed
             if self.current_round is None:
                 self.start_new_round()
+            assert self.current_round is not None
             
             # Run the round (will pause if player input needed)
             self.current_round.run()
@@ -443,16 +448,19 @@ class GameSession:
             # If we reach here without exception, round completed
             # Build round summary and pause for user acknowledgement
             r = self.current_round.round
-            summary_hands: Dict[str, List[Card]] = {}
+            summary_hands: Dict[str, List[CardData]] = {}
             summary_points: Dict[str, int] = {}
-            summary_breakdowns: Dict[str, List[Dict[str, any]]] = {}
+            summary_breakdowns: Dict[str, List[Dict[str, Any]]] = {}
             
             # Track pegging scores from this round
-            if self.human in self.current_round.pegging_scores:
-                self.total_points_pegged_human += self.current_round.pegging_scores[self.human]
-            if self.computer in self.current_round.pegging_scores:
-                self.total_points_pegged_computer += self.current_round.pegging_scores[self.computer]
-            self.pegging_rounds += self.current_round.pegging_rounds_count
+            if hasattr(self.current_round, "pegging_scores"):
+                scores = getattr(self.current_round, "pegging_scores")
+                if self.human in scores:
+                    self.total_points_pegged_human += scores[self.human]
+                if self.computer in scores:
+                    self.total_points_pegged_computer += scores[self.computer]
+            if hasattr(self.current_round, "pegging_rounds_count"):
+                self.pegging_rounds += getattr(self.current_round, "pegging_rounds_count")
 
             # Hands with starter for scoring context
             for p in self.game.players:
@@ -611,10 +619,11 @@ def healthcheck():
 def auth_google(req: GoogleAuthRequest):
     """Verify Google ID token and upsert user; return stable user_id."""
     try:
-        # Verify token
-        # Note: For best security, pass expected audience via env var; for now accept any valid token
+        # Verify token with strict audience
+        if not GOOGLE_CLIENT_ID:
+            raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured on backend")
         request = google_requests.Request()
-        payload = id_token.verify_oauth2_token(req.id_token, request)
+        payload = id_token.verify_oauth2_token(req.id_token, request, audience=GOOGLE_CLIENT_ID)
         # Extract user info
         user_id = payload.get("sub")
         email = payload.get("email")
@@ -727,9 +736,9 @@ def get_stats(user_id: str):
 
 
 @app.get("/stats/{user_id}/history")
-def get_game_history(user_id: str, opponent_id: str = None, limit: int = 50):
+def get_game_history_endpoint(user_id: str, opponent_id: Optional[str] = None, limit: int = 50):
     """Get individual game history for a user (for charting/analysis)."""
-    history = get_game_history(user_id, opponent_id=opponent_id, limit=limit)
+    history = db_get_game_history(user_id, opponent_id=opponent_id, limit=limit)
     return {
         "user_id": user_id,
         "opponent_id": opponent_id,
