@@ -9,6 +9,7 @@ from cribbage.cribbagegame import CribbageGame, CribbageRound, debug
 from cribbage.player import Player, RandomPlayer
 from cribbage.models import ActionType, GameStateResponse, PlayerAction, CardData
 from cribbage.playingcards import Card, Deck
+from cribbage.opponents import get_opponent_strategy, list_opponent_types, OpponentStrategy
 from pydantic import BaseModel
 
 
@@ -77,6 +78,23 @@ class APIPlayer(Player):
             if 1 <= idx <= len(hand):
                 return hand[idx - 1]
         return None
+
+
+class StrategyPlayer(Player):
+    """Player that uses an opponent strategy for decision-making."""
+    
+    def __init__(self, name: str, strategy: OpponentStrategy):
+        super().__init__(name)
+        self.strategy = strategy
+    
+    def select_crib_cards(self, hand):
+        return self.strategy.select_crib_cards(hand)
+    
+    def select_card_to_play(self, hand, table, crib):
+        # Extract cards from table (table contains dicts with 'player' and 'card' keys)
+        table_cards = [entry['card'] if isinstance(entry, dict) else entry for entry in table]
+        table_value = sum(c.get_value() for c in table_cards)
+        return self.strategy.select_card_to_play(hand, table_cards, table_value)
 
 
 def card_to_data(card: Card) -> CardData:
@@ -232,10 +250,12 @@ def _map_scores_for_frontend(game: CribbageGame) -> Dict[str, int]:
 class GameSession:
     """Manages a single game session with pause/resume capability."""
     
-    def __init__(self, game_id: str):
+    def __init__(self, game_id: str, opponent_type: str = "random"):
         self.game_id = game_id
+        self.opponent_type = opponent_type
         self.human = APIPlayer("human")
-        self.computer = RandomPlayer("computer")
+        strategy = get_opponent_strategy(opponent_type)
+        self.computer = StrategyPlayer("computer", strategy)
         self.game = CribbageGame(players=[self.human, self.computer])
         self.current_round: Optional[ResumableRound] = None
         self.waiting_for: Optional[ActionType] = None
@@ -435,6 +455,7 @@ class GameSession:
 class CreateGameRequest(BaseModel):
     dealer: Optional[Literal['human','computer','you','player']] = None
     preset: Optional[Literal['aces_twos_vs_threes_fours']] = None
+    opponent_type: Optional[str] = "random"  # "random", "greedy", "defensive"
     # Future: explicit card lists like ["ace-hearts", "two-spades"], not used yet
     human_cards: Optional[List[str]] = None
     computer_cards: Optional[List[str]] = None
@@ -466,11 +487,33 @@ def healthcheck():
     return {"status": "ok"}
 
 
+@app.get("/opponents")
+def get_opponents():
+    """Get list of available opponent types."""
+    opponents = []
+    for opponent_type in list_opponent_types():
+        strategy = get_opponent_strategy(opponent_type)
+        opponents.append({
+            "id": opponent_type,
+            "name": strategy.get_name()
+        })
+    return {"opponents": opponents}
+
+
 @app.post("/game/new")
 def create_game(req: Optional[CreateGameRequest] = None) -> GameStateResponse:
     """Create a new game with optional deterministic setup."""
     game_id = str(uuid.uuid4())
-    session = GameSession(game_id)
+    
+    # Get opponent type from request or use default
+    opponent_type = "random"
+    if req and req.opponent_type:
+        opponent_type = req.opponent_type
+        # Validate opponent type
+        if opponent_type not in list_opponent_types():
+            raise HTTPException(status_code=400, detail=f"Invalid opponent_type. Must be one of: {list_opponent_types()}")
+    
+    session = GameSession(game_id, opponent_type=opponent_type)
 
     # Configure dealer if specified
     if req and req.dealer:
