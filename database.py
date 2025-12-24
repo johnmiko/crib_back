@@ -25,6 +25,18 @@ if DATABASE_URL:
 Base = declarative_base()
 
 
+class User(Base):
+    """Authenticated user records sourced from Google SSO."""
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, index=True)  # Google 'sub' as stable id
+    email = Column(String, index=True, nullable=True)
+    name = Column(String, nullable=True)
+    picture = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
 class GameResult(Base):
     """Track individual game results with detailed statistics for users."""
     __tablename__ = "game_results"
@@ -43,6 +55,30 @@ def init_db():
     """Initialize database tables."""
     if engine:
         Base.metadata.create_all(bind=engine)
+def upsert_google_user(user_id: str, email: Optional[str], name: Optional[str], picture: Optional[str]) -> Optional[User]:
+    """Create or update a user from verified Google payload."""
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user.email = email or user.email
+            user.name = name or user.name
+            user.picture = picture or user.picture
+            user.updated_at = datetime.utcnow()
+        else:
+            user = User(id=user_id, email=email, name=name, picture=picture)
+            db.add(user)
+        db.commit()
+        return user
+    except Exception as e:
+        db.rollback()
+        print(f"Error upserting user: {e}")
+        return None
+    finally:
+        db.close()
+
 
 
 def get_db() -> Session:

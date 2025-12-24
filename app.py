@@ -11,7 +11,9 @@ from cribbage.player import Player, RandomPlayer
 from cribbage.models import ActionType, GameStateResponse, PlayerAction, CardData
 from cribbage.playingcards import Card, Deck
 from cribbage.opponents import get_opponent_strategy, list_opponent_types, OpponentStrategy
-from database import init_db, record_match_result, get_user_stats, get_game_history
+from database import init_db, record_match_result, get_user_stats, get_game_history, upsert_google_user
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 from pydantic import BaseModel
 
 
@@ -413,9 +415,10 @@ class GameSession:
         avg_hand_score = 0.0
         avg_crib_score = 0.0
         
-        # Average points pegged (pegging happens in sequences)
-        if self.pegging_rounds > 0:
-            avg_points_pegged = self.total_points_pegged_human / self.pegging_rounds
+        # Average points pegged per hand (user preference)
+        # Divide total pegging points by number of hands the human played
+        if self.human_hands_count > 0:
+            avg_points_pegged = self.total_points_pegged_human / self.human_hands_count
         
         # Average hand score
         if self.human_hands_count > 0:
@@ -575,6 +578,11 @@ class CreateGameRequest(BaseModel):
     computer_cards: Optional[List[str]] = None
 
 
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+
+
+
 def _make_card(rank_name: str, suit_name: str) -> Card:
     return Card(rank=Deck.RANKS[rank_name], suit=Deck.SUITS[suit_name])
 
@@ -599,6 +607,28 @@ games: Dict[str, GameSession] = {}
 def healthcheck():
     """Health check endpoint."""
     return {"status": "ok"}
+@app.post("/auth/google")
+def auth_google(req: GoogleAuthRequest):
+    """Verify Google ID token and upsert user; return stable user_id."""
+    try:
+        # Verify token
+        # Note: For best security, pass expected audience via env var; for now accept any valid token
+        request = google_requests.Request()
+        payload = id_token.verify_oauth2_token(req.id_token, request)
+        # Extract user info
+        user_id = payload.get("sub")
+        email = payload.get("email")
+        name = payload.get("name")
+        picture = payload.get("picture")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="Invalid Google token: missing sub")
+        # Upsert user
+        upsert_google_user(user_id, email, name, picture)
+        return {"user_id": user_id, "email": email, "name": name, "picture": picture}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Google token: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Auth error: {e}")
 
 
 @app.get("/opponents")
