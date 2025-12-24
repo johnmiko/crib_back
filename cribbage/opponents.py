@@ -78,7 +78,7 @@ class GreedyOpponent(OpponentStrategy):
         return random.choice(valid_cards)
     
     def get_name(self) -> str:
-        return "Greedy"
+        return "Greedy (Not Implemented)"
 
 
 class DefensiveOpponent(OpponentStrategy):
@@ -98,7 +98,7 @@ class DefensiveOpponent(OpponentStrategy):
         return random.choice(valid_cards)
     
     def get_name(self) -> str:
-        return "Defensive"
+        return "Defensive (Not Implemented)"
 
 
 class LinearBOpponent(OpponentStrategy):
@@ -198,111 +198,6 @@ class LinearBOpponent(OpponentStrategy):
     
     def get_name(self) -> str:
         return "LinearB"
-
-
-class NonLinearBOpponent(OpponentStrategy):
-    """Opponent using non-linear feature-based reinforcement learning model."""
-    
-    def __init__(self, model_date: str = "20251223"):
-        """Initialize NonLinearB opponent with trained weights."""
-        models_dir = Path(__file__).parent.parent / "models" / "linear_b"
-        
-        throw_weights_path = models_dir / f"nlb_throw_weights_{model_date}.npy"
-        peg_weights_path = models_dir / f"nlb_peg_weights_{model_date}.npy"
-        
-        try:
-            self.throw_weights = np.load(throw_weights_path)
-            self.peg_weights = np.load(peg_weights_path)
-        except FileNotFoundError as e:
-            raise FileNotFoundError(f"NonLinearB model files not found: {e}")
-    
-    # Use same feature extraction as LinearB
-    def _get_throwing_features(self, hand_cards: List[Card], thrown_cards: List[Card], is_dealer: bool) -> np.ndarray:
-        """Extract feature vector for throwing decision."""
-        low_cards = sum(1 for c in hand_cards if c.get_value() < 5) / 4
-        fives = sum(1 for c in hand_cards if c.get_value() == 5) / 4
-        high_cards = sum(1 for c in hand_cards if 5 < c.get_value() < 10) / 4
-        tens = sum(1 for c in hand_cards if c.get_value() == 10) / 4
-        low_cards_thrown = sum(1 for c in thrown_cards if c.get_value() < 5) / 2
-        fives_thrown = sum(1 for c in thrown_cards if c.get_value() == 5) / 2
-        high_cards_thrown = sum(1 for c in thrown_cards if 5 < c.get_value() < 10) / 2
-        tens_thrown = sum(1 for c in thrown_cards if c.get_value() == 10) / 2
-        dealer = 1 if is_dealer else 0
-        
-        return np.array([low_cards, fives, high_cards, tens, low_cards_thrown, 
-                        fives_thrown, high_cards_thrown, tens_thrown, dealer])
-    
-    def _get_pegging_features(self, hand_cards: List[Card], table_value: int, opponent_cards_left: int) -> np.ndarray:
-        """Extract feature vector for pegging decision."""
-        low_cards = sum(1 for c in hand_cards if c.get_value() < 5) / 4
-        fives = sum(1 for c in hand_cards if c.get_value() == 5) / 4
-        high_cards = sum(1 for c in hand_cards if 5 < c.get_value() < 10) / 4
-        tens = sum(1 for c in hand_cards if c.get_value() == 10) / 4
-        count_low = 1 if table_value < 15 else 0
-        count_high = 1 if table_value >= 15 else 0
-        opp_cards = opponent_cards_left / 4
-        
-        return np.array([low_cards, fives, high_cards, tens, count_low, count_high, opp_cards])
-    
-    def select_crib_cards(self, hand: List[Card]) -> List[Card]:
-        """Select cards to throw using non-linear model."""
-        best_throw = None
-        best_score = -np.inf
-        
-        try:
-            for throw_combo in combinations(hand, 2):
-                thrown = list(throw_combo)
-                remaining = [c for c in hand if c not in thrown]
-                
-                features = self._get_throwing_features(remaining, thrown, is_dealer=True)
-                # Note: NonLinearB may use expanded features - if shape mismatch, fall back
-                if len(features) != len(self.throw_weights):
-                    # Fall back to random selection if feature dimensions don't match
-                    return random.sample(hand, 2)
-                score = np.dot(self.throw_weights, features)
-                
-                if score > best_score:
-                    best_score = score
-                    best_throw = thrown
-        except (ValueError, IndexError):
-            # If any error occurs, fall back to random selection
-            return random.sample(hand, 2)
-        
-        return best_throw if best_throw else random.sample(hand, 2)
-    
-    def select_card_to_play(self, hand: List[Card], table: List[Card], table_value: int) -> Card:
-        """Select card to play using non-linear pegging model."""
-        valid_cards = [c for c in hand if c.get_value() + table_value <= 31]
-        if not valid_cards:
-            return None
-        
-        best_card = None
-        best_score = -np.inf
-        opponent_cards_left = 2
-        
-        try:
-            for card in valid_cards:
-                new_hand = [c for c in hand if c != card]
-                new_value = table_value + card.get_value()
-                
-                features = self._get_pegging_features(new_hand, new_value, opponent_cards_left)
-                # Note: NonLinearB may use expanded features - if shape mismatch, fall back
-                if len(features) != len(self.peg_weights):
-                    # Fall back to random selection if feature dimensions don't match
-                    return random.choice(valid_cards)
-                score = np.dot(self.peg_weights, features)
-                
-                if score > best_score:
-                    best_score = score
-                    best_card = card
-        except (ValueError, IndexError):
-            # If any error occurs, fall back to random selection
-            return random.choice(valid_cards)
-        
-        return best_card if best_card else random.choice(valid_cards)
-    
-    def get_name(self) -> str:
-        return "NonLinearB"
 
 
 class DeepPegOpponent(OpponentStrategy):
@@ -529,7 +424,6 @@ OPPONENT_REGISTRY = {
     "greedy": GreedyOpponent,
     "defensive": DefensiveOpponent,
     "linearb": LinearBOpponent,
-    "nonlinearb": NonLinearBOpponent,
     "deeppeg": DeepPegOpponent,
     "myrmidon": MyrmidonOpponent,
 }
