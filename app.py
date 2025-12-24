@@ -26,12 +26,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Configure CORS - allow all origins for development
+# Configure CORS - allow localhost for development and production domains
 # Note: When allow_credentials=True, allow_origins cannot be ["*"]
-# So we list common development ports explicitly
+# So we list development ports and production domains explicitly
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        # Local development
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:5174",
@@ -42,6 +43,10 @@ app.add_middleware(
         "http://127.0.0.1:5174",
         "http://127.0.0.1:8080",
         "http://127.0.0.1:8081",
+        # Production domains
+        "https://crib-sigma.vercel.app",
+        "https://*.vercel.app",  # Allow any Vercel deployment
+        "https://*.up.railway.app",  # Allow Railway deployments
     ],
     allow_credentials=True,
     allow_methods=["*"],
