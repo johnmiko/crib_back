@@ -9,6 +9,9 @@ description = "Cribbage game library"
 authors = [{ name = "johnm" }]
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = [
+  "cribbage-engine @ ../cribbage-engine",
+]
 
 [tool.setuptools]
 py-modules = []
