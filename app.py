@@ -1,8 +1,4 @@
 """FastAPI backend for Cribbage game using existing cribbagegame classes."""
-import sys
-
-sys.path.insert(0, ".")
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, Optional, List, Literal, Any
@@ -142,9 +138,9 @@ class StrategyPlayer(BasePlayer):
 def card_to_data(card: Card) -> CardData:
     """Convert a Card object to CardData."""
     return CardData(
-        rank=card.get_rank(),
-        suit=card.get_suit(),
-        value=card.get_value(),
+        rank=card.rank,
+        suit=card.suit,
+        value=card.value,
         symbol=str(card)
     )
 
@@ -189,7 +185,7 @@ class ResumableRound:
             r._populate_crib()  # May raise AwaitingPlayerInput
             r._cut()
             r.starter = r.deck.draw()
-            if r.starter.rank == 'jack':
+            if r.starter.rank == 'j':
                 r.game.board.peg(r.dealer, 1)
             self.active_players = [r.nondealer, r.dealer]
             self.phase = 'play'
@@ -622,6 +618,7 @@ games: Dict[str, GameSession] = {}
 def healthcheck():
     """Health check endpoint."""
     return {"status": "ok"}
+
 @app.post("/auth/google")
 def auth_google(req: GoogleAuthRequest):
     """Verify Google ID token and upsert user; return stable user_id."""
@@ -659,6 +656,11 @@ def get_opponents():
         })
     return {"opponents": opponents}
 
+
+@app.get("/game/new")
+def just_post_new_game(): 
+    # Frontend is currently sending a get response instead of post, need to investigate
+    return create_game(None)
 
 @app.post("/game/new")
 def create_game(req: Optional[CreateGameRequest] = None) -> GameStateResponse:
