@@ -1,6 +1,10 @@
 {
   "build": {
-    "builder": "nixpacks"
+    "builder": "nixpacks",
+    "env": {
+      "PYTHON_VERSION": "3.10",
+      "PIP_NO_CACHE_DIR": "1"
+    }
   },
   "deploy": {
     "restartPolicyType": "on_failure",
