@@ -8,13 +8,14 @@ from pathlib import Path
 from itertools import combinations
 
 from cribbage.playingcards import Card
+from cribbage.players.beginner_player import BeginnerPlayer
 
 
 class OpponentStrategy(ABC):
     """Base class for opponent decision-making strategies."""
     
     @abstractmethod
-    def select_crib_cards(self, hand: List[Card]) -> List[Card]:
+    def select_crib_cards(self, hand: List[Card], dealer_is_self: bool) -> List[Card]:
         """Select 2 cards to place in the crib.
         
         Args:
@@ -421,12 +422,13 @@ class MyrmidonOpponent(OpponentStrategy):
 
 # Registry of available opponents
 OPPONENT_REGISTRY = {
+    "beginner": BeginnerPlayer,
     "random": RandomOpponent,
-    "greedy": GreedyOpponent,
-    "defensive": DefensiveOpponent,
-    "linearb": LinearBOpponent,
-    "deeppeg": DeepPegOpponent,
-    "myrmidon": MyrmidonOpponent,
+    # "greedy": GreedyOpponent,
+    # "defensive": DefensiveOpponent,
+    # "linearb": LinearBOpponent,
+    # "deeppeg": DeepPegOpponent,
+    # "myrmidon": MyrmidonOpponent,
     # "bestai": BestAIOpponent,
 }
 

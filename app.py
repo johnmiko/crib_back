@@ -125,9 +125,9 @@ class StrategyPlayer(BasePlayer):
         super().__init__(name)
         self.strategy = strategy
     
-    def select_crib_cards(self, hand, dealer_is_self=None, your_score=None, opponent_score=None):
+    def select_crib_cards(self, hand, dealer_is_self=True, your_score=None, opponent_score=None):
         # Strategy only needs the hand
-        return self.strategy.select_crib_cards(hand)
+        return self.strategy.select_crib_cards(hand, dealer_is_self)
     
     def select_card_to_play(self, hand, table, crib):
         # Extract cards from table (table contains dicts with 'player' and 'card' keys)
