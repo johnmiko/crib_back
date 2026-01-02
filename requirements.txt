@@ -12,4 +12,4 @@ psycopg2-binary>=2.9.0
 python-dotenv>=1.2.1
 google-auth>=2.35.0
 pandas
-cribbage-engine @ git+https://github.com/johnmiko/crib_engine
+cribbage-engine==1.0.1 @ git+https://github.com/johnmiko/crib_engine
