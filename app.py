@@ -125,7 +125,8 @@ class StrategyPlayer(BasePlayer):
         super().__init__(name)
         self.strategy = strategy
     
-    def select_crib_cards(self, hand):
+    def select_crib_cards(self, hand, dealer_is_self=None, your_score=None, opponent_score=None):
+        # Strategy only needs the hand
         return self.strategy.select_crib_cards(hand)
     
     def select_card_to_play(self, hand, table, crib):
@@ -137,12 +138,19 @@ class StrategyPlayer(BasePlayer):
 
 def card_to_data(card: Card) -> CardData:
     """Convert a Card object to CardData."""
+    # card.value should always be an int for valid cards
+    value = card.value if card.value is not None else 0
     return CardData(
         rank=card.rank,
         suit=card.suit,
-        value=card.value,
+        value=value,
         symbol=str(card)
     )
+
+
+def _get_table_value(table: List[Dict], start_idx: int = 0) -> int:
+    """Calculate table value from list of {'player': p, 'card': c} dicts."""
+    return sum(m['card'].get_value() for m in table[start_idx:])
 
 
 class ResumableRound:
@@ -150,6 +158,8 @@ class ResumableRound:
     
     def __init__(self, game, dealer):
         self.round = CribbageRound(game=game, dealer=dealer)
+        # Patch the get_table_value method to handle dict entries
+        self.round.get_table_value = lambda start_idx: _get_table_value(self.round.table, start_idx)
         self.phase = 'start'
         self.active_players = None
         self.sequence_start_idx = 0
@@ -185,7 +195,7 @@ class ResumableRound:
             r._populate_crib()  # May raise AwaitingPlayerInput
             r._cut()
             r.starter = r.deck.draw()
-            if r.starter.rank == 'j':
+            if r.starter and r.starter.rank == 'j':
                 r.game.board.peg(r.dealer, 1)
             self.active_players = [r.nondealer, r.dealer]
             self.phase = 'play'
@@ -214,22 +224,23 @@ class ResumableRound:
                             seq_cards = ", ".join(str(m['card']) for m in r.table[self.sequence_start_idx:])
                         except Exception:
                             seq_cards = ""
-                        logger.debug(f"[PLAY] Next: {p} | seq=[{seq_cards}] | value={r.get_table_value(self.sequence_start_idx)} | hand={r.hands.get(p, [])}")
+                        logger.debug(f"[PLAY] Next: {p} | seq=[{seq_cards}] | value={_get_table_value(r.table, self.sequence_start_idx)} | hand={r.hands.get(p.name, [])}")
                         card = p.select_card_to_play(
-                            hand=r.hands[p],
+                            hand=r.hands[p.name],
                             table=r.table[self.sequence_start_idx:],
                             crib=r.crib
                         )  # May raise AwaitingPlayerInput
                         
-                        if card is None or card.get_value() + r.get_table_value(self.sequence_start_idx) > 31:
-                            logger.debug(f"[GO] {p} cannot play or chose go (value={r.get_table_value(self.sequence_start_idx)})")
+                        if card is None or card.get_value() + _get_table_value(r.table, self.sequence_start_idx) > 31:
+                            logger.debug(f"[GO] {p} cannot play or chose go (value={_get_table_value(r.table, self.sequence_start_idx)})")
                             self.active_players.remove(p)
                         else:
                             r.table.append({'player': p, 'card': card})
-                            r.hands[p].remove(card)
-                            if not r.hands[p]:
+                            r.hands[p.name].remove(card)
+                            r.most_recent_player = p  # Track last player for go/31 scoring
+                            if not r.hands[p.name]:
                                 self.active_players.remove(p)
-                            logger.debug(f"[PLAY] {p} plays {card} -> value={r.get_table_value(self.sequence_start_idx)}")
+                            logger.debug(f"[PLAY] {p} plays {card} -> value={_get_table_value(r.table, self.sequence_start_idx)}")
                             score = r._score_play(card_seq=[move['card'] for move in r.table[self.sequence_start_idx:]])
                             if score:
                                 # Track pegging score
@@ -242,7 +253,7 @@ class ResumableRound:
                 r.go_or_31_reached(self.active_players)
                 # Reset sequence start for next sequence after go/31
                 self.sequence_start_idx = len(r.table)
-                self.active_players = [p for p in r.game.players if r.hands[p]]
+                self.active_players = [p for p in r.game.players if r.hands[p.name]]
             
             self.phase = 'scoring'
         
@@ -303,7 +314,8 @@ class GameSession:
         self.human = APIPlayer("human")
         strategy = get_opponent_strategy(opponent_type)
         self.computer = StrategyPlayer("computer", strategy)
-        self.game = CribbageGame(players=[self.human, self.computer])
+        # Don't copy players so we can modify their state (pending_selection)
+        self.game = CribbageGame(players=[self.human, self.computer], copy_players=False)
         self.current_round: Optional[ResumableRound] = None
         self.waiting_for: Optional[ActionType] = None
         self.message: str = ""
@@ -313,7 +325,7 @@ class GameSession:
         self.round_num: int = 0
         self.match_recorded: bool = False  # Track if we've recorded stats
         # One-time overrides for next new round
-        self.next_dealer_override: Optional[Player] = None
+        self.next_dealer_override: Optional[BasePlayer] = None
         self.next_round_overrides: Dict = {}
         # Last round summary for client pause
         self.last_round_summary: Optional[Dict] = None
@@ -341,8 +353,8 @@ class GameSession:
         valid_indices = []
         
         if self.current_round:
-            your_hand = [card_to_data(c) for c in self.current_round.hands.get(self.human, [])]
-            computer_hand = [card_to_data(c) for c in self.current_round.hands.get(self.computer, [])]
+            your_hand = [card_to_data(c) for c in self.current_round.hands.get(self.human.name, [])]
+            computer_hand = [card_to_data(c) for c in self.current_round.hands.get(self.computer.name, [])]
             
             # Use the active sequence_start_idx to show only the current sequence
             sequence_start = getattr(self.current_round, 'sequence_start_idx', 0)
@@ -351,7 +363,7 @@ class GameSession:
             table_cards = [card_to_data(m['card']) for m in self.current_round.table[sequence_start:]]
             
             if self.current_round.table:
-                table_value = sum(m['card'].get_value() for m in self.current_round.table[sequence_start:])
+                table_value = _get_table_value(self.current_round.table, sequence_start)
 
             
             if self.current_round.starter:
@@ -359,7 +371,7 @@ class GameSession:
             
             # Calculate valid card indices
             if self.waiting_for == ActionType.SELECT_CARD_TO_PLAY:
-                for i, card in enumerate(self.current_round.hands.get(self.human, [])):
+                for i, card in enumerate(self.current_round.hands.get(self.human.name, [])):
                     if card.get_value() + table_value <= 31:
                         valid_indices.append(i)
             elif self.waiting_for == ActionType.SELECT_CRIB_CARDS:

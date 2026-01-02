@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 import pytest
 
-from cribbage.player import RandomPlayer as _RandomPlayer
+from cribbage.players.random_player import RandomPlayer as _RandomPlayer
 
 from crib_api.opponents import RandomOpponent
 
