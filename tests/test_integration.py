@@ -1,6 +1,6 @@
 """Quick test to verify game creation and match recording work together."""
 import sys
-sys.path.insert(0, 'C:\\Users\\johnm\\ccode\\crib_back')
+sys.path.insert(0, '/')
 
 from app import GameSession
 
