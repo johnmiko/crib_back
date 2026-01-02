@@ -1,4 +1,7 @@
 """FastAPI backend for Cribbage game using existing cribbagegame classes."""
+import sys
+
+sys.path.insert(0, ".")
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,9 +9,10 @@ from typing import Dict, Optional, List, Literal, Any
 from contextlib import asynccontextmanager
 import uuid
 
-from cribbage.cribbagegame import CribbageGame, CribbageRound, debug
-from cribbage.player import Player, RandomPlayer
-from crib_api.models import ActionType, GameStateResponse, PlayerAction, CardData
+from cribbage.cribbagegame import CribbageGame, CribbageRound
+from cribbage.players.base_player import BasePlayer
+from cribbage.players.random_player import RandomPlayer
+from cribbage.models import ActionType, GameStateResponse, PlayerAction, CardData
 from cribbage.playingcards import Card, Deck
 from crib_api.opponents import get_opponent_strategy, list_opponent_types, OpponentStrategy
 from database import init_db, record_match_result, get_user_stats, get_game_history as db_get_game_history, upsert_google_user
@@ -16,6 +20,9 @@ import os
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -69,7 +76,7 @@ class AwaitingPlayerInput(Exception):
         super().__init__(msg)
 
 
-class APIPlayer(Player):
+class APIPlayer(BasePlayer):
     """Player that pauses game execution when input is needed."""
     
     def __init__(self, name: str):
@@ -88,7 +95,7 @@ class APIPlayer(Player):
             return selection
         raise AwaitingPlayerInput(msg, cards, n_cards)
     
-    def select_crib_cards(self, hand):
+    def select_crib_cards(self, hand, dealer_is_self, your_score, opponent_score):
         """Select cards for the crib."""
         cards_selected = []
         while len(cards_selected) < 2:
@@ -115,7 +122,7 @@ class APIPlayer(Player):
         return None
 
 
-class StrategyPlayer(Player):
+class StrategyPlayer(BasePlayer):
     """Player that uses an opponent strategy for decision-making."""
     
     def __init__(self, name: str, strategy: OpponentStrategy):
@@ -182,7 +189,7 @@ class ResumableRound:
             r._populate_crib()  # May raise AwaitingPlayerInput
             r._cut()
             r.starter = r.deck.draw()
-            if r.starter.get_rank() == 'jack':
+            if r.starter.rank == 'jack':
                 r.game.board.peg(r.dealer, 1)
             self.active_players = [r.nondealer, r.dealer]
             self.phase = 'play'
@@ -211,7 +218,7 @@ class ResumableRound:
                             seq_cards = ", ".join(str(m['card']) for m in r.table[self.sequence_start_idx:])
                         except Exception:
                             seq_cards = ""
-                        debug(f"[PLAY] Next: {p} | seq=[{seq_cards}] | value={r.get_table_value(self.sequence_start_idx)} | hand={r.hands.get(p, [])}")
+                        logger.debug(f"[PLAY] Next: {p} | seq=[{seq_cards}] | value={r.get_table_value(self.sequence_start_idx)} | hand={r.hands.get(p, [])}")
                         card = p.select_card_to_play(
                             hand=r.hands[p],
                             table=r.table[self.sequence_start_idx:],
@@ -219,14 +226,14 @@ class ResumableRound:
                         )  # May raise AwaitingPlayerInput
                         
                         if card is None or card.get_value() + r.get_table_value(self.sequence_start_idx) > 31:
-                            debug(f"[GO] {p} cannot play or chose go (value={r.get_table_value(self.sequence_start_idx)})")
+                            logger.debug(f"[GO] {p} cannot play or chose go (value={r.get_table_value(self.sequence_start_idx)})")
                             self.active_players.remove(p)
                         else:
                             r.table.append({'player': p, 'card': card})
                             r.hands[p].remove(card)
                             if not r.hands[p]:
                                 self.active_players.remove(p)
-                            debug(f"[PLAY] {p} plays {card} -> value={r.get_table_value(self.sequence_start_idx)}")
+                            logger.debug(f"[PLAY] {p} plays {card} -> value={r.get_table_value(self.sequence_start_idx)}")
                             score = r._score_play(card_seq=[move['card'] for move in r.table[self.sequence_start_idx:]])
                             if score:
                                 # Track pegging score
@@ -592,11 +599,11 @@ class GoogleAuthRequest(BaseModel):
 
 
 def _make_card(rank_name: str, suit_name: str) -> Card:
-    return Card(rank=Deck.RANKS[rank_name], suit=Deck.SUITS[suit_name])
+    return Card(rank_name + suit_name)
 
 
 def _generate_cards_for_ranks(ranks: List[str], n: int) -> List[Card]:
-    suits = list(Deck.SUITS.keys())  # hearts, diamonds, clubs, spades
+    suits = list(Deck.SUITS)  # hearts, diamonds, clubs, spades
     cards: List[Card] = []
     i = 0
     while len(cards) < n:
