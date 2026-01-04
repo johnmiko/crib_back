@@ -207,6 +207,10 @@ class ResumableRound:
             self.phase = 'play'
         
         if self.phase == 'play':
+            # Initialize active_players only on first entry to play phase
+            if self.active_players is None:
+                self.active_players = [r.nondealer, r.dealer]
+            
             # If we're resuming with a pending human selection, ensure human acts first
             try:
                 from app import APIPlayer as _APIPlayer  # local check without circular import issues
@@ -222,13 +226,13 @@ class ResumableRound:
                 self.active_players = sorted(self.active_players, key=_priority)
 
             # Note: self.players_said_go persists across run() calls to track go state
-            self.active_players = [r.nondealer, r.dealer]
             any_player_has_at_least_1_card = any(len(hand) > 0 for hand in self.hands.values())
             for p in self.active_players:
                 if p not in self.pegging_scores:
                     self.pegging_scores[p] = 0
             while any_player_has_at_least_1_card and self.game_winner is None:
                 while any_player_has_at_least_1_card and self.game_winner is None:
+                    # breakpoint()
                     players_to_check = list(self.active_players)
                     for p in players_to_check:
                         # Skip players who have already said "go" this sequence
@@ -241,7 +245,7 @@ class ResumableRound:
                             seq_cards = ", ".join(str(m['card']) for m in r.table[self.sequence_start_idx:])
                         except Exception:
                             seq_cards = ""
-                        logger.debug(f"[PLAY] Next: {p} | seq=[{seq_cards}] | value={_get_table_value(r.table, self.sequence_start_idx)} | hand={r.hands.get(p.name, [])}")
+                        # logger.debug(f"[PLAY] Next: {p} | seq=[{seq_cards}] | value={_get_table_value(r.table, self.sequence_start_idx)} | hand={r.hands.get(p.name, [])}")
                         card = p.select_card_to_play(
                             hand=r.hands[p.name],
                             table=r.table[self.sequence_start_idx:],
@@ -254,6 +258,7 @@ class ResumableRound:
                             self.players_said_go.append(p)
                             # self.active_players.remove(p)
                         else:
+                            logger.debug(f"[PLAY] {p} plays {card} -> value={_get_table_value(r.table, self.sequence_start_idx)}")
                             if card == Card("qd"):
                                 a = 1 
                             r.table.append({'player': p, 'card': card})
@@ -262,8 +267,7 @@ class ResumableRound:
                             r.hands[p.name].remove(card)
                             r.most_recent_player = p  # Track last player for go/31 scoring
                             # if not r.hands[p.name]:
-                            #     self.active_players.remove(p)
-                            logger.debug(f"[PLAY] {p} plays {card} -> value={_get_table_value(r.table, self.sequence_start_idx)}")
+                            #     self.active_players.remove(p)                            
                             score = r._score_play(card_seq=[move['card'] for move in r.table[self.sequence_start_idx:]])
                             if score:
                                 # Track pegging score                                
@@ -280,13 +284,15 @@ class ResumableRound:
                                 logger.debug("All players have said go or reached 31.")
                                 # Note: second parameter is table cards (list), not count (misleading param name in engine)
                                 players_to_check = r.go_or_31_reached(self.players_said_go, [move['card'] for move in r.table[self.sequence_start_idx:]])
+                                # After go: player who said go FIRST leads next sequence                                
                                 self.players_said_go = []
                                 self.sequence_start_idx = len(r.table)
-                                # Reset active players for the next sequence
+                                # Reset active players with first_to_say_go leading
                                 self.active_players = [p for p in r.game.players if r.hands[p.name]]
                             any_player_has_at_least_1_card = any(len(hand) > 0 for hand in self.hands.values())
                             if not any_player_has_at_least_1_card:                            
-                                r.game.board.peg(p, 1)                                
+                                r.game.board.peg(p, 1)              
+                                logger.debug(f"{p.name} scores 1 for last card.")                  
                                 self.history.score_after_pegging = [r.game.board.get_score(p) for p in r.game.players]
                                 break
                 
