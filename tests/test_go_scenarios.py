@@ -7,11 +7,15 @@ According to cribbage rules:
 3. The player who plays the last card in the sequence gets 1 point for "Go" and 2 points if they reach exactly 31.
 """
 
+from math import log
 from fastapi.testclient import TestClient
 from app import app
 from cribbage.playingcards import Card, build_hand
 from unittest.mock import patch
 import pytest
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def test_exactly_31_scores_2_points():
@@ -324,7 +328,7 @@ def test_last_card_scores_1_point():
         print(f"  Total pegging points: {total_pegging_points}")
 
 
-def test_go_then_opponent_leads():
+def test_go_skips_that_players_turn():
     """Test that pegging works and scores are tracked properly.
     
     This test verifies that go scenarios work correctly and points are scored.
@@ -333,7 +337,7 @@ def test_go_then_opponent_leads():
     
     # Create a simple scenario
     computer_hand = build_hand(['kh', 'kd', 'kc', 'ks', 'qh', 'qd'])
-    human_hand = build_hand(['ah', 'ad', 'ac', 'as', '2h', '2d'])
+    human_hand = build_hand(['jh', 'jd', 'jc', 'js', 'qc', 'qs'])
     
     def mock_deal(self):
         self.hands = {
@@ -368,7 +372,11 @@ def test_go_then_opponent_leads():
         max_iterations = 30
         for _ in range(max_iterations):
             state = client.get(f"/game/{game_id}").json()
-            
+            logger.info("current game state: \n")            
+            logger.info(f"{state['action_required']=}")
+            logger.info(f"{state['your_hand']=}")
+            logger.info(f"{state['computer_hand']=}")
+            logger.info(f"{state['table_cards']=}")
             if state['action_required'] in ['round_complete', 'game_over']:
                 break
             
@@ -380,12 +388,11 @@ def test_go_then_opponent_leads():
                 if state['valid_card_indices']:
                     response = client.post(f"/game/{game_id}/action", json={
                         "card_indices": [state['valid_card_indices'][0]]
-                    })
+                    })                    
                 else:
                     response = client.post(f"/game/{game_id}/action", json={
                         "card_indices": []
-                    })
-                
+                    })                
                 if response.status_code != 200:
                     break
         
