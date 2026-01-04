@@ -347,7 +347,7 @@ class GameSession:
         """Get current game state."""
         your_hand = []
         computer_hand = []
-        table_cards = []
+        table_cards = []        
         table_value = 0
         starter_card = None
         valid_indices = []
@@ -389,7 +389,10 @@ class GameSession:
         dealer = "none"
         if self.current_round and self.current_round.dealer:
             dealer = _to_frontend_name(self.current_round.dealer)
-        
+        if self.current_round:
+            table_history = [card_to_data(m['card']) for m in self.current_round.table]
+        else:
+            table_history = []
         # Scores mapped for frontend
         scores_dict = _map_scores_for_frontend(self.game)
         
@@ -401,6 +404,7 @@ class GameSession:
             computer_hand=computer_hand,
             computer_hand_count=len(computer_hand) if computer_hand else 0,
             table_cards=table_cards,
+            table_history=table_history,
             scores=scores_dict,
             dealer=dealer,
             table_value=table_value,
