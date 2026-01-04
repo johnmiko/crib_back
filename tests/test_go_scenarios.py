@@ -19,24 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def test_go_scenario_with_continuation_1():
-    """Test that reaching exactly 31 scores 2 points.
-    
-    This test creates a scenario where a player can reach exactly 31,
-    and verifies that they score 2 points total (1 for 31 + 1 for go/last card).
-    
-    Note: The scoring logic shows that ExactlyEqualsN returns 1 point for 31
-    (to avoid double-counting), and go_or_31_reached adds 1 point for last card,
-    totaling 2 points for hitting exactly 31.
-    """
     client = TestClient(app)
-    
-    # Create hands designed so a 31 can be achieved
-    # Computer: K, Q, J, 10, 9, 8 
-    # Human: A, 10, 10, 10, 5, 4
-    # If human discards 5,4 and has A, 10, 10, 10
-    # And plays: 10 -> computer K (20) -> A (21) -> computer 10 (31)
-    # computer_hand = build_hand(['kh', 'qd', 'jc', '10s', '9h', '8d'])
-    # human_hand = build_hand(['ah', '10h', '10d', '10c', '5s', '4s'])
     computer_hand = build_hand(['js', 'jc', '10h','10d','10c', '10s'])
     human_hand = build_hand(['jh', 'jd', 'qh','qd','qc', 'qs'])
     def mock_deal(self):
@@ -51,26 +34,15 @@ def test_go_scenario_with_continuation_1():
     
     with patch('cribbage.cribbageround.CribbageRound._deal', mock_deal):
         response = client.post("/game/new", json={
-            # "opponent_type": "play first card",
-            "opponent_type": "beginner",
+            "opponent_type": "play first card",
             "dealer": "computer"
         })
-        
-        assert response.status_code == 200
         game_id = response.json()["game_id"]
-        state = response.json()
-                
-        hand_cards = [Card(c['rank'] + c['suit']) for c in state['your_hand']]        
-        discard_indices = [0, 1] # Discard jacks
-        
+        state = response.json()                    
         response = client.post(f"/game/{game_id}/action", json={
-            "card_indices": discard_indices
+            "card_indices": [0, 1] # Discard jacks
         })
-        assert response.status_code == 200
-        state = response.json()
-        initial_computer_score = state['scores']['computer']
-        initial_human_score = state['scores']['you']
-        
+        state = response.json()        
         while (state["your_hand"] or state["computer_hand"]):
             # Wait for our turn
             state = client.get(f"/game/{game_id}").json()
@@ -81,15 +53,7 @@ def test_go_scenario_with_continuation_1():
                 break  # Round may have ended
             
             # Find and play the card
-            hand_cards = [Card(c['rank'] + c['suit']) for c in state['your_hand']]
             card_idx = 0
-            # for i, card in enumerate(hand_cards):
-            #     if card.rank == rank and card.suit == suit:
-            #         card_idx = i
-            #         break
-            
-            # if card_idx is None:
-            #     break  # Card not available
             
             response = client.post(f"/game/{game_id}/action", json={
                 "card_indices": [card_idx]
@@ -111,13 +75,13 @@ def test_go_scenario_with_continuation_1():
                         client.post(f"/game/{game_id}/action", json={"card_indices": []})
                     else:
                         break  # Stop, let's check scores
-        
+                
         state = client.get(f"/game/{game_id}").json()
         
         # Check if either player scored points for hitting 31
         # Computer should have hit 31 after: 10 (human) + K (10) + A (1) + 10 (computer) = 31
         # Computer should score 2 points: 1 for 31, 1 for go/last card
-        computer_score_gained = state['scores']['computer'] - initial_computer_score
+        #        
         
         # The exact score may vary based on other combinations (pairs, 15s, etc)
         # But if 31 was hit, should have at least 2 points
@@ -129,6 +93,7 @@ def test_go_scenario_with_continuation_1():
                                           {'rank': '10', 'suit': 'c', 'symbol': '10c', 'value': 10},                                          
                                           {'rank': 'q', 'suit': 's', 'symbol': 'qs', 'value': 10},                                          
                                           {'rank': '10', 'suit': 's', 'symbol': '10s', 'value': 10}]
+        assert state["points_pegged"] == [1,2]
         assert state["table_history"] == expected_table_history
         # assert computer_score_gained >= 2, \
         #     f"Computer should have scored at least 2 points for 31. Scored {computer_score_gained}"

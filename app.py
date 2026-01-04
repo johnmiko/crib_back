@@ -5,6 +5,7 @@ from typing import Dict, Optional, List, Literal, Any
 from contextlib import asynccontextmanager
 import uuid
 
+from cribbage.cribbageround import RoundHistory
 from cribbage.cribbagegame import CribbageGame, CribbageRound
 from cribbage.players.base_player import BasePlayer
 from cribbage.players.random_player import RandomPlayer
@@ -169,6 +170,10 @@ class ResumableRound:
         # Track pegging scores for stats
         self.pegging_scores: Dict = {}  # {player: total_points}
         self.pegging_rounds_count = 0  # Number of scoring events
+        # Track players who have said "go" in current sequence
+        self.players_said_go: List = []
+        self.game_winner = None
+        self.history = RoundHistory()
         
     def run(self):
         """Run the round until completion or until player input needed."""
@@ -216,10 +221,21 @@ class ResumableRound:
                 # Stable sort keeps other order but moves the human with pending selection to front
                 self.active_players = sorted(self.active_players, key=_priority)
 
-            while sum([len(v) for v in r.hands.values()]):
-                while self.active_players:
+            # Note: self.players_said_go persists across run() calls to track go state
+            self.active_players = [r.nondealer, r.dealer]
+            any_player_has_at_least_1_card = any(len(hand) > 0 for hand in self.hands.values())
+            for p in self.active_players:
+                if p not in self.pegging_scores:
+                    self.pegging_scores[p] = 0
+            while any_player_has_at_least_1_card and self.game_winner is None:
+                while any_player_has_at_least_1_card and self.game_winner is None:
                     players_to_check = list(self.active_players)
                     for p in players_to_check:
+                        # Skip players who have already said "go" this sequence
+                        if p in self.players_said_go:
+                            logger.debug(f"[GO] {p} has already said go, skipping.")
+                            continue
+                        
                         # Debug current selection context
                         try:
                             seq_cards = ", ".join(str(m['card']) for m in r.table[self.sequence_start_idx:])
@@ -235,27 +251,48 @@ class ResumableRound:
                         
                         if card is None or card.get_value() + _get_table_value(r.table, self.sequence_start_idx) > 31:
                             logger.debug(f"[GO] {p} cannot play or chose go (value={_get_table_value(r.table, self.sequence_start_idx)})")
-                            self.active_players.remove(p)
+                            self.players_said_go.append(p)
+                            # self.active_players.remove(p)
                         else:
+                            if card == Card("qd"):
+                                a = 1 
                             r.table.append({'player': p, 'card': card})
+                            if _get_table_value(r.table, self.sequence_start_idx) == 31:
+                                self.pegging_scores[p] += 1
                             r.hands[p.name].remove(card)
                             r.most_recent_player = p  # Track last player for go/31 scoring
-                            if not r.hands[p.name]:
-                                self.active_players.remove(p)
+                            # if not r.hands[p.name]:
+                            #     self.active_players.remove(p)
                             logger.debug(f"[PLAY] {p} plays {card} -> value={_get_table_value(r.table, self.sequence_start_idx)}")
                             score = r._score_play(card_seq=[move['card'] for move in r.table[self.sequence_start_idx:]])
                             if score:
-                                # Track pegging score
-                                if p not in self.pegging_scores:
-                                    self.pegging_scores[p] = 0
+                                # Track pegging score                                
                                 self.pegging_scores[p] += score
                                 self.pegging_rounds_count += 1
-                                r.game.board.peg(p, score)
+                                winner = r.game.board.peg(p, score)
+                                if winner is not None:
+                                    self.game_winner = winner
+                                    break
+                        
+                        # Check if both players have said go
+                        if self.game_winner is None:
+                            if len(self.players_said_go) == 2:
+                                logger.debug("All players have said go or reached 31.")
+                                # Note: second parameter is table cards (list), not count (misleading param name in engine)
+                                players_to_check = r.go_or_31_reached(self.players_said_go, [move['card'] for move in r.table[self.sequence_start_idx:]])
+                                self.players_said_go = []
+                                self.sequence_start_idx = len(r.table)
+                                # Reset active players for the next sequence
+                                self.active_players = [p for p in r.game.players if r.hands[p.name]]
+                            any_player_has_at_least_1_card = any(len(hand) > 0 for hand in self.hands.values())
+                            if not any_player_has_at_least_1_card:                            
+                                r.game.board.peg(p, 1)                                
+                                self.history.score_after_pegging = [r.game.board.get_score(p) for p in r.game.players]
+                                break
                 
-                r.go_or_31_reached(self.active_players)
-                # Reset sequence start for next sequence after go/31
-                self.sequence_start_idx = len(r.table)
-                self.active_players = [p for p in r.game.players if r.hands[p.name]]
+                # If active_players is empty but players still have cards, restart the sequence
+                # if not self.active_players and sum([len(v) for v in r.hands.values()]):
+                #     self.active_players = [p for p in r.game.players if r.hands[p.name]]
             
             self.phase = 'scoring'
         
@@ -344,6 +381,8 @@ class GameSession:
         self.total_crib_score_computer = 0
         self.human_dealer_count = 0
         self.computer_dealer_count = 0
+        self.table_history = []
+        self.points_pegged = [0,0]
         
     def get_state(self) -> GameStateResponse:
         """Get current game state."""
@@ -392,9 +431,8 @@ class GameSession:
         if self.current_round and self.current_round.dealer:
             dealer = _to_frontend_name(self.current_round.dealer)
         if self.current_round:
-            table_history = [card_to_data(m['card']) for m in self.current_round.table]
-        else:
-            table_history = []
+            self.table_history = [card_to_data(m['card']) for m in self.current_round.table]
+            self.points_pegged = self.current_round.history.score_after_pegging
         # Scores mapped for frontend
         scores_dict = _map_scores_for_frontend(self.game)
         
@@ -406,7 +444,7 @@ class GameSession:
             computer_hand=computer_hand,
             computer_hand_count=len(computer_hand) if computer_hand else 0,
             table_cards=table_cards,
-            table_history=table_history,
+            table_history=self.table_history,
             scores=scores_dict,
             dealer=dealer,
             table_value=table_value,
@@ -414,7 +452,8 @@ class GameSession:
             valid_card_indices=valid_indices,
             game_over=self.game_over,
             winner=winner,
-            round_summary=self.last_round_summary
+            round_summary=self.last_round_summary,
+            points_pegged=self.points_pegged,
         )
     
     def start_new_round(self):
@@ -733,7 +772,10 @@ def get_game(game_id: str) -> GameStateResponse:
     """Get current game state."""
     if game_id not in games:
         raise HTTPException(status_code=404, detail="Game not found")
-    return games[game_id].get_state()
+    game_state = games[game_id].get_state()
+    if game_state.message == 'Round complete. Review hands and continue.':
+        game_state = games[game_id].get_state()
+    return game_state
 
 
 @app.post("/game/{game_id}/action")
