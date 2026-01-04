@@ -103,7 +103,7 @@ class APIPlayer(BasePlayer):
                 cards_selected.append(hand[idx - 1])
         return cards_selected
     
-    def select_card_to_play(self, hand, table, crib):
+    def select_card_to_play(self, hand, table, crib, count=0):
         """Select a card to play."""
         if not hand:
             return None
@@ -129,10 +129,11 @@ class StrategyPlayer(BasePlayer):
         # Strategy only needs the hand
         return self.strategy.select_crib_cards(hand, dealer_is_self)
     
-    def select_card_to_play(self, hand, table, crib):
+    def select_card_to_play(self, hand, table, crib, count=0):
         # Extract cards from table (table contains dicts with 'player' and 'card' keys)
         table_cards = [entry['card'] if isinstance(entry, dict) else entry for entry in table]
-        table_value = sum(c.get_value() for c in table_cards)
+        # Use provided count if given, otherwise compute from table
+        table_value = count if count else sum(c.get_value() for c in table_cards)
         return self.strategy.select_card_to_play(hand, table_cards, table_value)
 
 
@@ -228,7 +229,8 @@ class ResumableRound:
                         card = p.select_card_to_play(
                             hand=r.hands[p.name],
                             table=r.table[self.sequence_start_idx:],
-                            crib=r.crib
+                            crib=r.crib,
+                            count=_get_table_value(r.table, self.sequence_start_idx)
                         )  # May raise AwaitingPlayerInput
                         
                         if card is None or card.get_value() + _get_table_value(r.table, self.sequence_start_idx) > 31:
