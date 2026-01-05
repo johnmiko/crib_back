@@ -57,6 +57,8 @@ app.add_middleware(
         "https://crib-sigma.vercel.app",
         "https://*.vercel.app",  # Allow any Vercel deployment
         "https://*.up.railway.app",  # Allow Railway deployments
+        # Loveable development
+        "https://80688fe0-889d-4a8c-ab4e-ea2cd9b5e5d6.lovableproject.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -441,8 +443,7 @@ class GameSession:
             self.points_pegged = self.current_round.history.score_after_pegging
         # Scores mapped for frontend
         scores_dict = _map_scores_for_frontend(self.game)
-        
-        return GameStateResponse(
+        game_state_response = GameStateResponse(
             game_id=self.game_id,
             action_required=self.waiting_for or ActionType.WAITING_FOR_COMPUTER,
             message=self.message,
@@ -461,7 +462,9 @@ class GameSession:
             round_summary=self.last_round_summary,
             points_pegged=self.points_pegged,
         )
-    
+        logger.info(f"game_state: {game_state_response}")
+        return game_state_response        
+
     def start_new_round(self):
         """Start a new round."""
         if self.next_dealer_override is not None:
@@ -778,9 +781,7 @@ def get_game(game_id: str) -> GameStateResponse:
     """Get current game state."""
     if game_id not in games:
         raise HTTPException(status_code=404, detail="Game not found")
-    game_state = games[game_id].get_state()
-    if game_state.message == 'Round complete. Review hands and continue.':
-        game_state = games[game_id].get_state()
+    game_state = games[game_id].get_state()    
     return game_state
 
 
