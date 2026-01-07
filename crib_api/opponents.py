@@ -10,6 +10,7 @@ from itertools import combinations
 from cribbage.playingcards import Card
 from cribbage.players.beginner_player import BeginnerPlayer
 from cribbage.players.medium_player import MediumPlayer
+from cribbage.players.random_player import RandomPlayer
 from cribbage.players.play_first_card_player import PlayFirstCardPlayer
 
 
@@ -47,62 +48,6 @@ class OpponentStrategy(ABC):
         """Get the display name for this opponent strategy."""
         pass
 
-
-class RandomOpponent(OpponentStrategy):
-    """Opponent that makes completely random decisions."""
-    
-    def select_crib_cards(self, hand: List[Card]) -> List[Card]:
-        return random.sample(hand, 2)
-    
-    def select_card_to_play(self, hand: List[Card], table: List[Card], table_value: int) -> Card:
-        # Filter to valid cards that won't exceed 31
-        valid_cards = [c for c in hand if c.get_value() + table_value <= 31]
-        if not valid_cards:
-            return None
-        return random.choice(valid_cards)
-    
-    def get_name(self) -> str:
-        return "Random"
-
-
-class GreedyOpponent(OpponentStrategy):
-    """Opponent that tries to score points aggressively (placeholder for future implementation)."""
-    
-    def select_crib_cards(self, hand: List[Card]) -> List[Card]:
-        # TODO: Implement greedy crib selection (keep high-scoring combinations)
-        # For now, just use random selection
-        return random.sample(hand, 2)
-    
-    def select_card_to_play(self, hand: List[Card], table: List[Card], table_value: int) -> Card:
-        # TODO: Implement greedy play (prioritize 15s, pairs, runs)
-        # For now, just use random selection
-        valid_cards = [c for c in hand if c.get_value() + table_value <= 31]
-        if not valid_cards:
-            return None
-        return random.choice(valid_cards)
-    
-    def get_name(self) -> str:
-        return "Greedy (Not Implemented)"
-
-
-class DefensiveOpponent(OpponentStrategy):
-    """Opponent that plays defensively to minimize opponent's scoring (placeholder for future implementation)."""
-    
-    def select_crib_cards(self, hand: List[Card]) -> List[Card]:
-        # TODO: Implement defensive crib selection
-        # For now, just use random selection
-        return random.sample(hand, 2)
-    
-    def select_card_to_play(self, hand: List[Card], table: List[Card], table_value: int) -> Card:
-        # TODO: Implement defensive play (avoid giving opponent scoring opportunities)
-        # For now, just use random selection
-        valid_cards = [c for c in hand if c.get_value() + table_value <= 31]
-        if not valid_cards:
-            return None
-        return random.choice(valid_cards)
-    
-    def get_name(self) -> str:
-        return "Defensive (Not Implemented)"
 
 
 class LinearBOpponent(OpponentStrategy):
@@ -426,7 +371,7 @@ class MyrmidonOpponent(OpponentStrategy):
 OPPONENT_REGISTRY = {
     "medium": MediumPlayer,
     "beginner": BeginnerPlayer,
-    "random": RandomOpponent,
+    "random": RandomPlayer,
     "play first card": PlayFirstCardPlayer,
     # "greedy": GreedyOpponent,
     # "defensive": DefensiveOpponent,
