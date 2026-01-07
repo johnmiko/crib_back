@@ -9,6 +9,7 @@ from itertools import combinations
 
 from cribbage.playingcards import Card
 from cribbage.players.beginner_player import BeginnerPlayer
+from cribbage.players.medium_player import MediumPlayer
 from cribbage.players.play_first_card_player import PlayFirstCardPlayer
 
 
@@ -423,6 +424,7 @@ class MyrmidonOpponent(OpponentStrategy):
 
 # Registry of available opponents
 OPPONENT_REGISTRY = {
+    "medium": MediumPlayer,
     "beginner": BeginnerPlayer,
     "random": RandomOpponent,
     "play first card": PlayFirstCardPlayer,
