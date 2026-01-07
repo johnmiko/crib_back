@@ -9,7 +9,6 @@ import pytest
 
 from cribbage.players.random_player import RandomPlayer as _RandomPlayer
 
-from crib_api.opponents import RandomOpponent
 
 # Add the project root to sys.path
 project_root = Path(__file__).parent
@@ -59,5 +58,5 @@ def deterministic_computer(monkeypatch):
         return valid[0]
 
     monkeypatch.setattr(_RandomPlayer, "select_card_to_play", _select_card_legacy, raising=True)
-    monkeypatch.setattr(RandomOpponent, "select_card_to_play", _select_card_strategy, raising=True)
+    monkeypatch.setattr(_RandomPlayer, "select_card_to_play", _select_card_strategy, raising=True)
     return True
