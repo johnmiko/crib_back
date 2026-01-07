@@ -29,7 +29,7 @@ class OpponentStrategy(ABC):
         pass
     
     @abstractmethod
-    def select_card_to_play(self, hand: List[Card], table: List[Card], table_value: int) -> Card:
+    def select_card_to_play(self, hand: List[Card], table: List[Card], table_value: int, crib=None) -> Card:
         """Select a card to play from hand.
         
         Args:

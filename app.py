@@ -132,14 +132,14 @@ class StrategyPlayer(BasePlayer):
     
     def select_crib_cards(self, hand, dealer_is_self=True, your_score=None, opponent_score=None):
         # Strategy only needs the hand
-        return self.strategy.select_crib_cards(hand, dealer_is_self)
+        return self.strategy.select_crib_cards(hand=hand, dealer_is_self=dealer_is_self)
     
     def select_card_to_play(self, hand, table, crib, count=0):
         # Extract cards from table (table contains dicts with 'player' and 'card' keys)
         table_cards = [entry['card'] if isinstance(entry, dict) else entry for entry in table]
         # Use provided count if given, otherwise compute from table
         table_value = count if count else sum(c.get_value() for c in table_cards)
-        return self.strategy.select_card_to_play(hand, table_cards, table_value)
+        return self.strategy.select_card_to_play(hand, table_cards, table_value, crib)
 
 
 def card_to_data(card: Card) -> CardData:
@@ -263,8 +263,6 @@ class ResumableRound:
                             # self.active_players.remove(p)
                         else:
                             logger.debug(f"[PLAY] {p} plays {card} -> value={_get_table_value(r.table, self.sequence_start_idx)}")
-                            if card == Card("qd"):
-                                a = 1 
                             r.table.append({'player': p, 'card': card})
                             if _get_table_value(r.table, self.sequence_start_idx) == 31:
                                 self.pegging_scores[p] += 1
