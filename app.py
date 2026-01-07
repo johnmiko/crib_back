@@ -184,8 +184,7 @@ class ResumableRound:
         r = self.round
         
         if self.phase == 'start':
-            r._cut()
-            r._deal()
+            r.setup_deal_phase()
             # Apply any deal/hand overrides for deterministic test sessions
             if self.overrides.get('hands'):
                 # Build a set of (rank_name, suit_name) for removal from deck
@@ -202,11 +201,13 @@ class ResumableRound:
             self.phase = 'crib'
         
         if self.phase == 'crib':
-            r._populate_crib()  # May raise AwaitingPlayerInput
-            r._cut()
-            r.starter = r.deck.draw()
-            if r.starter and r.starter.rank == 'j':
-                r.game.board.peg(r.dealer, 1)
+            r.setup_crib_phase()
+            # Check for heels
+            winner = r.setup_starter_scoring()
+            if winner is not None:
+                self.game_winner = winner
+                self.phase = 'complete'
+                return
             self.active_players = [r.nondealer, r.dealer]
             self.phase = 'play'
         
@@ -305,16 +306,7 @@ class ResumableRound:
             self.phase = 'scoring'
         
         if self.phase == 'scoring':
-            for p in r.game.players:
-                p_cards_played = [move['card'] for move in r.table if move['player'] == p]
-                score = r._score_hand(cards=p_cards_played + [r.starter])
-                if score:
-                    r.game.board.peg(p, score)
-            
-            score = r._score_hand(cards=(r.crib + [r.starter]), is_crib=True)
-            if score:
-                r.game.board.peg(r.dealer, score)
-            
+            r.score_hands_phase()
             self.phase = 'complete'
     
     @property
