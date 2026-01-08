@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, Optional, List, Literal, Any
 from contextlib import asynccontextmanager
 import uuid
+import random
 
 from cribbage.cribbageround import RoundHistory
 from cribbage.cribbagegame import CribbageGame, CribbageRound
@@ -361,7 +362,7 @@ class GameSession:
         self.last_cards: List[Card] = []
         self.last_n_cards: int = 0
         self.game_over: bool = False
-        self.round_num: int = 0
+        self.round_num: int = random.randint(0, 1)  # Random initial dealer
         self.match_recorded: bool = False  # Track if we've recorded stats
         # One-time overrides for next new round
         self.next_dealer_override: Optional[BasePlayer] = None
