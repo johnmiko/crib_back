@@ -272,7 +272,7 @@ class ResumableRound:
                             r.most_recent_player = p  # Track last player for go/31 scoring
                             # if not r.hands[p.name]:
                             #     self.active_players.remove(p)                            
-                            score = r._score_play(card_seq=[move['card'] for move in r.table[self.sequence_start_idx:]])
+                            score, description = r._score_play(card_seq=[move['card'] for move in r.table[self.sequence_start_idx:]])
                             if score:
                                 # Track pegging score                                
                                 self.pegging_scores[p] += score
@@ -434,6 +434,14 @@ class GameSession:
         if self.current_round:
             self.table_history = [card_to_data(m['card']) for m in self.current_round.table]
             self.points_pegged = self.current_round.history.score_after_pegging
+        
+        # Get most recent play events (last 3) for display
+        recent_events = []
+        if self.current_round and hasattr(self.current_round, 'play_record'):
+            # Get last 3 events, reversed so most recent is first
+            for record in reversed(self.current_round.play_record[-3:]):
+                recent_events.append(record.description)
+        
         # Scores mapped for frontend
         scores_dict = _map_scores_for_frontend(self.game)
         game_state_response = GameStateResponse(
@@ -454,6 +462,7 @@ class GameSession:
             winner=winner,
             round_summary=self.last_round_summary,
             points_pegged=self.points_pegged,
+            recent_play_events=recent_events if recent_events else None,
         )
         logger.info(f"game_state: {game_state_response}")
         return game_state_response        
