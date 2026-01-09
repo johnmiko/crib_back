@@ -577,12 +577,14 @@ class GameSession:
                     self.game_over = True
                     self.message = f"Game over! {p} wins!"
                     
-                    # Record match result (only if not already recorded and user_id exists)
-                    if not self.match_recorded and self.user_id:
+                    # Record match result (only if not already recorded)
+                    if not self.match_recorded:
                         won = (p == self.human)
                         avg_points_pegged, avg_hand_score, avg_crib_score = self.calculate_game_stats()
+                        # Use "not_signed_in" if user_id is not provided
+                        effective_user_id = self.user_id if self.user_id else "not_signed_in"
                         record_match_result(
-                            self.user_id,
+                            effective_user_id,
                             self.opponent_type,
                             won,
                             average_points_pegged=avg_points_pegged,

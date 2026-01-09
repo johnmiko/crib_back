@@ -105,7 +105,7 @@ def record_match_result(
     Record a game result for a user.
     
     Args:
-        user_id: User identifier (None if not logged in)
+        user_id: User identifier (use "not_signed_in" for anonymous users, None to skip recording)
         opponent_id: Opponent type (e.g., 'linearb', 'myrmidon')
         won: True if user won, False if lost
         average_points_pegged: Average points pegged per round
@@ -115,8 +115,8 @@ def record_match_result(
     Returns:
         True if recorded successfully, False otherwise
     """
-    # Don't track if user is not logged in
-    if not user_id:
+    # Don't track if user_id is explicitly None (skip tracking)
+    if user_id is None:
         return False
     
     # Don't track if database is not configured
