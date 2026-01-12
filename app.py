@@ -654,6 +654,7 @@ class CreateGameRequest(BaseModel):
     preset: Optional[Literal['aces_twos_vs_threes_fours']] = None
     opponent_type: Optional[str] = "random"  # "random", "greedy", "defensive"
     user_id: Optional[str] = None  # Optional user ID for match statistics
+    initial_scores: Optional[dict] = None  # {"human": 115, "computer": 115} for testing end game
     # Future: explicit card lists like ["ace-hearts", "two-spades"], not used yet
     human_cards: Optional[List[str]] = None
     computer_cards: Optional[List[str]] = None
@@ -750,6 +751,17 @@ def create_game(req: Optional[CreateGameRequest] = None) -> GameStateResponse:
             user_id = req.user_id
     
     session = GameSession(game_id, opponent_type=opponent_type, user_id=user_id)
+
+    # Set initial scores if specified
+    if req and req.initial_scores:
+        human_score = req.initial_scores.get("human", req.initial_scores.get("you", 0))
+        computer_score = req.initial_scores.get("computer", 0)
+        if human_score > 0:
+            session.game.board.pegs["human"]['front'] = human_score
+            session.game.board.pegs["human"]['rear'] = human_score
+        if computer_score > 0:
+            session.game.board.pegs["computer"]['front'] = computer_score
+            session.game.board.pegs["computer"]['rear'] = computer_score
 
     # Configure dealer if specified
     if req and req.dealer:
