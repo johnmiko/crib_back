@@ -300,8 +300,15 @@ class ResumableRound:
                             r.table.append({'player': p, 'card': card})
                             if new_value == 31:
                                 self.pegging_scores[p] += 1
+                                # Peg the point FIRST, then log with updated scores
+                                winner = r.game.board.peg(p, 1)
                                 scores = r.game.board.get_scores()
                                 logger.info(f"[SCORE] {p.name} scores 1 for reaching 31. Scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
+                                if winner is not None:
+                                    self.game_winner = winner
+                                    self.win_reason = f"{winner.name} won by pegging (31)!"
+                                    logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
+                                    break
                             r.hands[p.name].remove(card)
                             r.most_recent_player = p  # Track last player for go/31 scoring
                             # if not r.hands[p.name]:
@@ -427,8 +434,10 @@ class GameSession:
         self.human = APIPlayer("human")
         strategy = get_opponent_strategy(opponent_type)
         self.computer = StrategyPlayer("computer", strategy)
+        # Generate a seed for the game for reproducibility
+        self.game_seed = random.randint(0, 2**32 - 1)
         # Don't copy players so we can modify their state (pending_selection)
-        self.game = CribbageGame(players=[self.human, self.computer], copy_players=False)
+        self.game = CribbageGame(players=[self.human, self.computer], copy_players=False, seed=self.game_seed)
         self.current_round: Optional[ResumableRound] = None
         self.waiting_for: Optional[ActionType] = None
         self.message: str = ""
@@ -459,7 +468,7 @@ class GameSession:
         self.points_pegged = [0,0]
         self.win_reason: Optional[str] = None  # Track how the game was won
         
-        logger.info(f"[NEW GAME] Game {game_id} started. Opponent: {opponent_type}")
+        logger.info(f"[NEW GAME] Game {game_id} started. Opponent: {opponent_type}, Seed: {self.game_seed}")
         
     def get_state(self) -> GameStateResponse:
         """Get current game state."""
