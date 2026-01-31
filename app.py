@@ -300,7 +300,8 @@ class ResumableRound:
                             r.table.append({'player': p, 'card': card})
                             if new_value == 31:
                                 self.pegging_scores[p] += 1
-                                logger.info(f"[SCORE] {p.name} scores 1 for reaching 31")
+                                scores = r.game.board.get_scores()
+                                logger.info(f"[SCORE] {p.name} scores 1 for reaching 31. Scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
                             r.hands[p.name].remove(card)
                             r.most_recent_player = p  # Track last player for go/31 scoring
                             # if not r.hands[p.name]:
@@ -310,8 +311,9 @@ class ResumableRound:
                                 # Track pegging score                                
                                 self.pegging_scores[p] += score
                                 self.pegging_rounds_count += 1
-                                logger.info(f"[SCORE] {p.name} scores {score} points: {description}")
                                 winner = r.game.board.peg(p, score)
+                                scores = r.game.board.get_scores()
+                                logger.info(f"[SCORE] {p.name} scores {score} points: {description}. Scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
                                 if winner is not None:
                                     self.game_winner = winner
                                     self.win_reason = f"{winner.name} won by pegging ({description})!"
@@ -332,8 +334,9 @@ class ResumableRound:
                                 logger.debug(f"[SEQUENCE] New sequence starting. Table reset.")
                             any_player_has_at_least_1_card = any(len(hand) > 0 for hand in self.hands.values())
                             if not any_player_has_at_least_1_card:                            
-                                r.game.board.peg(p, 1)              
-                                logger.info(f"[SCORE] {p.name} scores 1 for last card.")                  
+                                r.game.board.peg(p, 1)
+                                scores = r.game.board.get_scores()
+                                logger.info(f"[SCORE] {p.name} scores 1 for last card. Scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")                  
                                 self.history.score_after_pegging = [r.game.board.get_score(p) for p in r.game.players]
                                 break
                 
@@ -351,8 +354,9 @@ class ResumableRound:
             winner = r.score_nondealer_hand()
             if winner is not None:
                 self.game_winner = winner
+                scores = r.game.board.get_scores()
                 self.win_reason = f"{winner.name} won by counting their hand (non-dealer)!"
-                logger.info(f"[GAME OVER] {self.win_reason} Final score: {r.game.board.get_scores()}")
+                logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
                 self.phase = 'complete'
                 return
             
@@ -360,8 +364,9 @@ class ResumableRound:
             winner = r.score_dealer_hand()
             if winner is not None:
                 self.game_winner = winner
+                scores = r.game.board.get_scores()
                 self.win_reason = f"{winner.name} won by counting their hand (dealer)!"
-                logger.info(f"[GAME OVER] {self.win_reason} Final score: {r.game.board.get_scores()}")
+                logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
                 self.phase = 'complete'
                 return
             
@@ -369,8 +374,9 @@ class ResumableRound:
             winner = r.score_crib()
             if winner is not None:
                 self.game_winner = winner
+                scores = r.game.board.get_scores()
                 self.win_reason = f"{winner.name} won by counting the crib!"
-                logger.info(f"[GAME OVER] {self.win_reason} Final score: {r.game.board.get_scores()}")
+                logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
                 self.phase = 'complete'
                 return
             
