@@ -94,5 +94,8 @@ def test_go_scenario_with_continuation_1():
                                           {'rank': '10', 'suit': 'c', 'symbol': '10c', 'value': 10},                                          
                                           {'rank': 'q', 'suit': 's', 'symbol': 'qs', 'value': 10},                                          
                                           {'rank': '10', 'suit': 's', 'symbol': '10s', 'value': 10}]
-        assert state["points_pegged"] == [1,2]
+        # Computer scores: 2 (nobs - before pegging) + 1 (first go) + 1 (second go) = 4
+        # Human scores: 1 (first go) = 1
+        # pegging_scores includes nobs scored during crib phase
+        assert state["pegging_scores"] == {'you': 1, 'computer': 4}
         assert state["table_history"] == expected_table_history

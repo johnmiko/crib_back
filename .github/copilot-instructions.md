@@ -1,3 +1,6 @@
+# Important note/caveats
+I (the user) am currently quite sick. I have severe brain fog, memory problems, and reading difficulty. Please try to keep your sentences short and simple when chatting with me. This will also affect my ability to accurately instruct you. Please keep this in mind when deciding what code to write (that the instructions may be lacking due to user illness)
+
 # AI Coding Assistant Instructions for Crib Backend
 Activate the virtual environment with .\.venv\Scripts\Activate.ps1 before doing any work
 - If you ever write any code that involves calculations, make sure to write a unit test to test that the calculation is correct

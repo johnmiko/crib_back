@@ -205,6 +205,7 @@ class ResumableRound:
         self.game_winner = None
         self.win_reason: Optional[str] = None  # Track how the game was won
         self.history = RoundHistory()
+        self.hands_were_scored = False  # Track if we actually scored hands (vs skipping due to pegging win)
         
     def run(self):
         """Run the round until completion or until player input needed."""
@@ -332,7 +333,15 @@ class ResumableRound:
                             if len(self.players_said_go) == 2:
                                 logger.info("[GO] All players have said go. Awarding 1 point to last player.")
                                 # Note: second parameter is table cards (list), not count (misleading param name in engine)
-                                players_to_check = r.go_or_31_reached(self.players_said_go, [move['card'] for move in r.table[self.sequence_start_idx:]])
+                                # go_or_31_reached returns a list and sets self.game_winner if someone wins
+                                r.go_or_31_reached(self.players_said_go, [move['card'] for move in r.table[self.sequence_start_idx:]])
+                                scores = r.game.board.get_scores()
+                                logger.info(f"[GO] After awarding go point. Scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
+                                if r.game_winner is not None:
+                                    self.game_winner = r.game_winner
+                                    self.win_reason = f"{r.game_winner.name} won by go!"
+                                    logger.info(f"[GAME OVER] {self.win_reason} Final score: {r.game.board.get_scores()}")
+                                    break
                                 # After go: player who said go FIRST leads next sequence                                
                                 self.players_said_go = []
                                 self.sequence_start_idx = len(r.table)
@@ -351,41 +360,51 @@ class ResumableRound:
                 # if not self.active_players and sum([len(v) for v in r.hands.values()]):
                 #     self.active_players = [p for p in r.game.players if r.hands[p.name]]
             
-            self.phase = 'scoring'
+            # Capture scores after pegging phase, before hand counting
+            # This ensures we always have pegging_scores available for the round summary
+            if not self.history.score_after_pegging:
+                self.history.score_after_pegging = [r.game.board.get_score(p) for p in r.game.players]
+            
+            # If game ended during pegging, skip scoring phase
+            if self.game_winner is not None:
+                self.phase = 'complete'
+                self.hands_were_scored = False  # Track that we skipped scoring
+            else:
+                self.phase = 'scoring'
+                self.hands_were_scored = True  # Track that we will score hands
         
         if self.phase == 'scoring':
             logger.info(f"[SCORING PHASE] Counting hands. Non-dealer ({r.nondealer.name}) counts first.")
             
             # Score each phase separately to track win reason
+            # Continue scoring all phases even if someone reaches 121
+            # to show complete round summary before ending game
+            
             # Non-dealer's hand
             winner = r.score_nondealer_hand()
-            if winner is not None:
+            if winner is not None and self.game_winner is None:
                 self.game_winner = winner
                 scores = r.game.board.get_scores()
                 self.win_reason = f"{winner.name} won by counting their hand (non-dealer)!"
                 logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
-                self.phase = 'complete'
-                return
             
-            # Dealer's hand
-            winner = r.score_dealer_hand()
-            if winner is not None:
-                self.game_winner = winner
-                scores = r.game.board.get_scores()
-                self.win_reason = f"{winner.name} won by counting their hand (dealer)!"
-                logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
-                self.phase = 'complete'
-                return
+            # Dealer's hand (only score if game not already won)
+            if self.game_winner is None:
+                winner = r.score_dealer_hand()
+                if winner is not None:
+                    self.game_winner = winner
+                    scores = r.game.board.get_scores()
+                    self.win_reason = f"{winner.name} won by counting their hand (dealer)!"
+                    logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
             
-            # Crib
-            winner = r.score_crib()
-            if winner is not None:
-                self.game_winner = winner
-                scores = r.game.board.get_scores()
-                self.win_reason = f"{winner.name} won by counting the crib!"
-                logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
-                self.phase = 'complete'
-                return
+            # Crib (only score if game not already won)
+            if self.game_winner is None:
+                winner = r.score_crib()
+                if winner is not None:
+                    self.game_winner = winner
+                    scores = r.game.board.get_scores()
+                    self.win_reason = f"{winner.name} won by counting the crib!"
+                    logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
             
             logger.info(f"[SCORING COMPLETE] Final scores: {r.game.board.get_scores()}")
             self.phase = 'complete'
@@ -465,7 +484,7 @@ class GameSession:
         self.human_dealer_count = 0
         self.computer_dealer_count = 0
         self.table_history = []
-        self.points_pegged = [0,0]
+        self.pegging_scores = None  # Scores after pegging, before hand counting
         self.win_reason: Optional[str] = None  # Track how the game was won
         
         logger.info(f"[NEW GAME] Game {game_id} started. Opponent: {opponent_type}, Seed: {self.game_seed}")
@@ -504,13 +523,14 @@ class GameSession:
             elif self.waiting_for == ActionType.SELECT_CRIB_CARDS:
                 valid_indices = list(range(len(your_hand)))
         
-        # Check for winner
+        # Check for winner (only if game_over flag is set)
+        # Note: Don't recalculate game_over here - it's set in submit_action after round summary
         winner = None
-        for p in self.game.players:
-            if self.game.board.get_score(p) >= 121:
-                self.game_over = True
-                winner = _to_frontend_name(p)
-                break
+        if self.game_over:
+            for p in self.game.players:
+                if self.game.board.get_score(p) >= 121:
+                    winner = _to_frontend_name(p)
+                    break
         
         # Get dealer
         dealer = "none"
@@ -518,7 +538,14 @@ class GameSession:
             dealer = _to_frontend_name(self.current_round.dealer)
         if self.current_round:
             self.table_history = [card_to_data(m['card']) for m in self.current_round.table]
-            self.points_pegged = self.current_round.history.score_after_pegging
+            # Convert score_after_pegging array to object matching frontend expectations
+            # Check for None specifically, not truthiness (empty list [] is valid)
+            if self.current_round.history.score_after_pegging is not None and len(self.current_round.history.score_after_pegging) > 0:
+                scores_array = self.current_round.history.score_after_pegging
+                self.pegging_scores = {
+                    _to_frontend_name(self.game.players[0]): scores_array[0],
+                    _to_frontend_name(self.game.players[1]): scores_array[1]
+                }
         
         # Get most recent play events (last 3) for display
         recent_events = []
@@ -547,7 +574,7 @@ class GameSession:
             winner=winner,
             win_reason=self.win_reason,  # Include detailed win reason
             round_summary=self.last_round_summary,
-            points_pegged=self.points_pegged,
+            pegging_scores=self.pegging_scores if hasattr(self, 'pegging_scores') else None,
             recent_play_events=recent_events if recent_events else None,
         )
         logger.info(f"game_state: {game_state_response}")
@@ -620,37 +647,55 @@ class GameSession:
             if hasattr(self.current_round, "pegging_rounds_count"):
                 self.pegging_rounds += getattr(self.current_round, "pegging_rounds_count")
 
-            # Hands with starter for scoring context
-            for p in self.game.players:
-                played_cards = [move['card'] for move in r.table if move['player'] == p]
-                hand_cards = played_cards + ([r.starter] if r.starter else [])
-                summary_hands[_to_frontend_name(p)] = [card_to_data(c) for c in hand_cards]
-                points, breakdown = r._score_hand_with_breakdown(hand_cards, is_crib=False)
-                summary_points[_to_frontend_name(p)] = points
-                summary_breakdowns[_to_frontend_name(p)] = breakdown
-                
-                # Track hand scores for stats
-                if p == self.human:
-                    self.total_hand_score_human += points
-                    self.human_hands_count += 1
-                else:
-                    self.total_hand_score_computer += points
-                    self.computer_hands_count += 1
+            # Only score hands and crib if hands were actually scored
+            # (i.e., we didn't skip the scoring phase due to game ending during pegging)
+            if self.current_round.hands_were_scored:
+                # Hands with starter for scoring context
+                for p in self.game.players:
+                    played_cards = [move['card'] for move in r.table if move['player'] == p]
+                    hand_cards = played_cards + ([r.starter] if r.starter else [])
+                    summary_hands[_to_frontend_name(p)] = [card_to_data(c) for c in hand_cards]
+                    points, breakdown = r._score_hand_with_breakdown(hand_cards, is_crib=False)
+                    summary_points[_to_frontend_name(p)] = points
+                    summary_breakdowns[_to_frontend_name(p)] = breakdown
+                    
+                    # Track hand scores for stats
+                    if p == self.human:
+                        self.total_hand_score_human += points
+                        self.human_hands_count += 1
+                    else:
+                        self.total_hand_score_computer += points
+                        self.computer_hands_count += 1
 
-            # Crib
-            crib_cards = r.crib + ([r.starter] if r.starter else [])
-            summary_hands['crib'] = [card_to_data(c) for c in crib_cards]
-            crib_points, crib_breakdown = r._score_hand_with_breakdown(crib_cards, is_crib=True)
-            summary_points['crib'] = crib_points
-            summary_breakdowns['crib'] = crib_breakdown
-            
-            # Track crib scores for stats
-            if r.dealer == self.human:
-                self.total_crib_score_human += crib_points
-                self.human_dealer_count += 1
+                # Crib
+                crib_cards = r.crib + ([r.starter] if r.starter else [])
+                summary_hands['crib'] = [card_to_data(c) for c in crib_cards]
+                crib_points, crib_breakdown = r._score_hand_with_breakdown(crib_cards, is_crib=True)
+                summary_points['crib'] = crib_points
+                summary_breakdowns['crib'] = crib_breakdown
+                
+                # Track crib scores for stats
+                if r.dealer == self.human:
+                    self.total_crib_score_human += crib_points
+                    self.human_dealer_count += 1
+                else:
+                    self.total_crib_score_computer += crib_points
+                    self.computer_dealer_count += 1
             else:
-                self.total_crib_score_computer += crib_points
-                self.computer_dealer_count += 1
+                # Game ended during pegging - don't score hands/crib
+                # Just show the cards that were played (for reference)
+                for p in self.game.players:
+                    played_cards = [move['card'] for move in r.table if move['player'] == p]
+                    hand_cards = played_cards + ([r.starter] if r.starter else [])
+                    summary_hands[_to_frontend_name(p)] = [card_to_data(c) for c in hand_cards]
+                    summary_points[_to_frontend_name(p)] = 0
+                    summary_breakdowns[_to_frontend_name(p)] = []
+                
+                # Show crib cards but no score
+                crib_cards = r.crib + ([r.starter] if r.starter else [])
+                summary_hands['crib'] = [card_to_data(c) for c in crib_cards]
+                summary_points['crib'] = 0
+                summary_breakdowns['crib'] = []
 
             self.last_round_summary = {
                 'hands': summary_hands,
@@ -658,39 +703,31 @@ class GameSession:
                 'breakdowns': summary_breakdowns,
             }
 
-            # Check if game is over
+            # Check if game is over (someone reached 121)
+            # Note: Don't set game_over yet - let user see round summary first
+            winner_player = None
             for p in self.game.players:
                 if self.game.board.get_score(p) >= 121:
-                    self.game_over = True
+                    winner_player = p
                     # Get win reason from current round if available
                     if self.current_round and self.current_round.win_reason:
                         self.win_reason = self.current_round.win_reason
                     else:
                         self.win_reason = f"{p.name} won by counting their hand/crib!"
-                    self.message = f"Game over! {self.win_reason}"
-                    logger.info(f"[GAME OVER] {self.message} Final: {self.game.board.get_scores()}")
-                    
-                    # Record match result (only if not already recorded)
-                    if not self.match_recorded:
-                        won = (p == self.human)
-                        avg_points_pegged, avg_hand_score, avg_crib_score = self.calculate_game_stats()
-                        # Use "not_signed_in" if user_id is not provided
-                        effective_user_id = self.user_id if self.user_id else "not_signed_in"
-                        record_match_result(
-                            effective_user_id,
-                            self.opponent_type,
-                            won,
-                            average_points_pegged=avg_points_pegged,
-                            average_hand_score=avg_hand_score,
-                            average_crib_score=avg_crib_score
-                        )
-                        self.match_recorded = True
-                    
-                    return self.get_state()
-
-            # Pause before starting next round
+                    logger.info(f"[GAME PENDING END] {self.win_reason} Will show after round summary. Final: {self.game.board.get_scores()}")
+                    break
+            
+            # Always pause to show round summary first (even if game is ending)
             self.waiting_for = ActionType.ROUND_COMPLETE
-            self.message = "Round complete. Review hands and continue."
+            if winner_player:
+                # Game is over - show who won in the message
+                winner_name = _to_frontend_name(winner_player)
+                if winner_name == 'you':
+                    self.message = "You won! Review hands and start a new game."
+                else:
+                    self.message = "Computer won! Review hands and start a new game."
+            else:
+                self.message = "Round complete. Review hands and continue."
             return self.get_state()
             
         except AwaitingPlayerInput as e:
@@ -722,11 +759,45 @@ class GameSession:
             else:
                 raise HTTPException(status_code=400, detail="Must select 0 or 1 card to play")
         elif self.waiting_for == ActionType.ROUND_COMPLETE:
-            # User acknowledged round summary; start next round
-            self.waiting_for = None
-            self.current_round = None
-            self.last_round_summary = None
-            return self.advance()
+            # User acknowledged round summary
+            # Check if game ended during that round
+            game_ended = False
+            for p in self.game.players:
+                if self.game.board.get_score(p) >= 121:
+                    game_ended = True
+                    self.game_over = True
+                    # win_reason should already be set from when we detected the win
+                    if not self.win_reason:
+                        self.win_reason = f"{p.name} won!"
+                    self.message = f"Game over! {self.win_reason}"
+                    logger.info(f"[GAME OVER] {self.message} Final: {self.game.board.get_scores()}")
+                    
+                    # Record match result (only if not already recorded)
+                    if not self.match_recorded:
+                        won = (p == self.human)
+                        avg_points_pegged, avg_hand_score, avg_crib_score = self.calculate_game_stats()
+                        effective_user_id = self.user_id if self.user_id else "not_signed_in"
+                        record_match_result(
+                            effective_user_id,
+                            self.opponent_type,
+                            won,
+                            average_points_pegged=avg_points_pegged,
+                            average_hand_score=avg_hand_score,
+                            average_crib_score=avg_crib_score
+                        )
+                        self.match_recorded = True
+                    break
+            
+            if game_ended:
+                # Game is over - return final state
+                self.waiting_for = None
+                return self.get_state()
+            else:
+                # Start next round
+                self.waiting_for = None
+                self.current_round = None
+                self.last_round_summary = None
+                return self.advance()
         else:
             raise HTTPException(status_code=400, detail="No action required")
         
