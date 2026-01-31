@@ -19,13 +19,38 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from pydantic import BaseModel
 import logging
+from logging.handlers import RotatingFileHandler
 
+# Configure logging to write to file and console
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# File handler with rotation (10MB max, keep 3 backups)
+file_handler = RotatingFileHandler(
+    'cribbage_game.log',
+    maxBytes=10*1024*1024,
+    backupCount=3
+)
+file_handler.setLevel(logging.DEBUG)
+file_formatter = logging.Formatter(
+    '%(asctime)s [%(levelname)8s] [%(name)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
+
+# Console handler for important messages
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize and cleanup resources."""
+    logger.info("Starting Cribbage backend server...")
     # Startup: Initialize database tables
     init_db()
     yield
@@ -178,6 +203,7 @@ class ResumableRound:
         # Track players who have said "go" in current sequence
         self.players_said_go: List = []
         self.game_winner = None
+        self.win_reason: Optional[str] = None  # Track how the game was won
         self.history = RoundHistory()
         
     def run(self):
@@ -203,14 +229,18 @@ class ResumableRound:
         
         if self.phase == 'crib':
             r.setup_crib_phase()
-            # Check for heels
+            logger.info(f"[CRIB] Starter card: {r.starter}, Dealer: {r.dealer.name}")
+            # Check for heels (nibs)
             winner = r.setup_starter_scoring()
             if winner is not None:
                 self.game_winner = winner
+                self.win_reason = f"{winner.name} won with nibs (Jack as starter card)!"
+                logger.info(f"[GAME OVER] {self.win_reason}")
                 self.phase = 'complete'
                 return
             self.active_players = [r.nondealer, r.dealer]
             self.phase = 'play'
+            logger.info(f"[PLAY PHASE] Starting pegging. {r.nondealer.name} leads.")
         
         if self.phase == 'play':
             # Initialize active_players only on first entry to play phase
@@ -260,14 +290,17 @@ class ResumableRound:
                         )  # May raise AwaitingPlayerInput
                         
                         if card is None or card.get_value() + _get_table_value(r.table, self.sequence_start_idx) > 31:
-                            logger.debug(f"[GO] {p} cannot play or chose go (value={_get_table_value(r.table, self.sequence_start_idx)})")
+                            logger.debug(f"[GO] {p.name} cannot play or chose go (table_value={_get_table_value(r.table, self.sequence_start_idx)})")
                             self.players_said_go.append(p)
                             # self.active_players.remove(p)
                         else:
-                            logger.debug(f"[PLAY] {p} plays {card} -> value={_get_table_value(r.table, self.sequence_start_idx)}")
+                            current_value = _get_table_value(r.table, self.sequence_start_idx)
+                            new_value = current_value + card.get_value()
+                            logger.info(f"[PLAY] {p.name} plays {card} (table: {current_value} -> {new_value})")
                             r.table.append({'player': p, 'card': card})
-                            if _get_table_value(r.table, self.sequence_start_idx) == 31:
+                            if new_value == 31:
                                 self.pegging_scores[p] += 1
+                                logger.info(f"[SCORE] {p.name} scores 1 for reaching 31")
                             r.hands[p.name].remove(card)
                             r.most_recent_player = p  # Track last player for go/31 scoring
                             # if not r.hands[p.name]:
@@ -277,15 +310,18 @@ class ResumableRound:
                                 # Track pegging score                                
                                 self.pegging_scores[p] += score
                                 self.pegging_rounds_count += 1
+                                logger.info(f"[SCORE] {p.name} scores {score} points: {description}")
                                 winner = r.game.board.peg(p, score)
                                 if winner is not None:
                                     self.game_winner = winner
+                                    self.win_reason = f"{winner.name} won by pegging ({description})!"
+                                    logger.info(f"[GAME OVER] {self.win_reason} Final score: {r.game.board.get_scores()}")
                                     break
                         
                         # Check if both players have said go
                         if self.game_winner is None:
                             if len(self.players_said_go) == 2:
-                                logger.debug("All players have said go or reached 31.")
+                                logger.info("[GO] All players have said go. Awarding 1 point to last player.")
                                 # Note: second parameter is table cards (list), not count (misleading param name in engine)
                                 players_to_check = r.go_or_31_reached(self.players_said_go, [move['card'] for move in r.table[self.sequence_start_idx:]])
                                 # After go: player who said go FIRST leads next sequence                                
@@ -293,10 +329,11 @@ class ResumableRound:
                                 self.sequence_start_idx = len(r.table)
                                 # Reset active players with first_to_say_go leading
                                 self.active_players = [p for p in r.game.players if r.hands[p.name]]
+                                logger.debug(f"[SEQUENCE] New sequence starting. Table reset.")
                             any_player_has_at_least_1_card = any(len(hand) > 0 for hand in self.hands.values())
                             if not any_player_has_at_least_1_card:                            
                                 r.game.board.peg(p, 1)              
-                                logger.debug(f"{p.name} scores 1 for last card.")                  
+                                logger.info(f"[SCORE] {p.name} scores 1 for last card.")                  
                                 self.history.score_after_pegging = [r.game.board.get_score(p) for p in r.game.players]
                                 break
                 
@@ -307,7 +344,37 @@ class ResumableRound:
             self.phase = 'scoring'
         
         if self.phase == 'scoring':
-            r.score_hands_phase()
+            logger.info(f"[SCORING PHASE] Counting hands. Non-dealer ({r.nondealer.name}) counts first.")
+            
+            # Score each phase separately to track win reason
+            # Non-dealer's hand
+            winner = r.score_nondealer_hand()
+            if winner is not None:
+                self.game_winner = winner
+                self.win_reason = f"{winner.name} won by counting their hand (non-dealer)!"
+                logger.info(f"[GAME OVER] {self.win_reason} Final score: {r.game.board.get_scores()}")
+                self.phase = 'complete'
+                return
+            
+            # Dealer's hand
+            winner = r.score_dealer_hand()
+            if winner is not None:
+                self.game_winner = winner
+                self.win_reason = f"{winner.name} won by counting their hand (dealer)!"
+                logger.info(f"[GAME OVER] {self.win_reason} Final score: {r.game.board.get_scores()}")
+                self.phase = 'complete'
+                return
+            
+            # Crib
+            winner = r.score_crib()
+            if winner is not None:
+                self.game_winner = winner
+                self.win_reason = f"{winner.name} won by counting the crib!"
+                logger.info(f"[GAME OVER] {self.win_reason} Final score: {r.game.board.get_scores()}")
+                self.phase = 'complete'
+                return
+            
+            logger.info(f"[SCORING COMPLETE] Final scores: {r.game.board.get_scores()}")
             self.phase = 'complete'
     
     @property
@@ -384,6 +451,9 @@ class GameSession:
         self.computer_dealer_count = 0
         self.table_history = []
         self.points_pegged = [0,0]
+        self.win_reason: Optional[str] = None  # Track how the game was won
+        
+        logger.info(f"[NEW GAME] Game {game_id} started. Opponent: {opponent_type}")
         
     def get_state(self) -> GameStateResponse:
         """Get current game state."""
@@ -460,6 +530,7 @@ class GameSession:
             valid_card_indices=valid_indices,
             game_over=self.game_over,
             winner=winner,
+            win_reason=self.win_reason,  # Include detailed win reason
             round_summary=self.last_round_summary,
             points_pegged=self.points_pegged,
             recent_play_events=recent_events if recent_events else None,
@@ -475,6 +546,7 @@ class GameSession:
             self.next_dealer_override = None
         else:
             dealer = self.game.players[self.round_num % len(self.game.players)]
+        logger.info(f"[NEW ROUND] Round {self.round_num + 1}. Dealer: {dealer.name}. Scores: {self.game.board.get_scores()}")
         self.current_round = ResumableRound(game=self.game, dealer=dealer)
         if self.next_round_overrides:
             self.current_round.overrides = self.next_round_overrides
@@ -575,7 +647,13 @@ class GameSession:
             for p in self.game.players:
                 if self.game.board.get_score(p) >= 121:
                     self.game_over = True
-                    self.message = f"Game over! {p} wins!"
+                    # Get win reason from current round if available
+                    if self.current_round and self.current_round.win_reason:
+                        self.win_reason = self.current_round.win_reason
+                    else:
+                        self.win_reason = f"{p.name} won by counting their hand/crib!"
+                    self.message = f"Game over! {self.win_reason}"
+                    logger.info(f"[GAME OVER] {self.message} Final: {self.game.board.get_scores()}")
                     
                     # Record match result (only if not already recorded)
                     if not self.match_recorded:
