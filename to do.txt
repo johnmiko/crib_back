@@ -1,4 +1,4 @@
-trigger rebuild to use crib_engine 1.1.6
+trigger rebuild to use crib_engine 1.1.7
 
 table count is 28
 computer has 4 9
