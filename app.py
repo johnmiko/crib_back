@@ -443,6 +443,45 @@ def _map_scores_for_frontend(game: CribbageGame) -> Dict[str, int]:
     return scores
 
 
+def _format_play_event(description: str) -> str:
+    """Format a play event description for frontend display.
+    
+    Converts player names and formats scoring messages.
+    Example: "human: 15 for 2" -> "You scored 15 for 2"
+    """
+    if not description:
+        return description
+    
+    # Split on first colon to separate player from action
+    parts = description.split(":", 1)
+    if len(parts) != 2:
+        return description
+    
+    player_name = parts[0].strip().lower()
+    action = parts[1].strip()
+    
+    # Convert player name
+    if player_name == "human":
+        player_display = "You"
+    elif player_name == "computer":
+        player_display = "Computer"
+    else:
+        player_display = player_name.capitalize()
+    
+    # Check if this is a scoring event (contains "for")
+    if " for " in action.lower():
+        return f"{player_display} scored {action}"
+    # Check for "said go"
+    elif action.lower() == "go":
+        return f"{player_display} said go"
+    # Check for plays card
+    elif action.lower().startswith("plays "):
+        card_part = action[6:]  # Remove "Plays "
+        return f"{player_display} played {card_part}"
+    else:
+        return f"{player_display}: {action}"
+
+
 class GameSession:
     """Manages a single game session with pause/resume capability."""
     
@@ -552,7 +591,8 @@ class GameSession:
         if self.current_round and hasattr(self.current_round, 'play_record'):
             # Get last 3 events, reversed so most recent is first
             for record in reversed(self.current_round.play_record[-3:]):
-                recent_events.append(record.description)
+                formatted = _format_play_event(record.description)
+                recent_events.append(formatted)
         
         # Scores mapped for frontend
         scores_dict = _map_scores_for_frontend(self.game)
