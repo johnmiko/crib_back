@@ -83,9 +83,9 @@ app.add_middleware(
         "https://crib-sigma.vercel.app",
         "https://*.vercel.app",  # Allow any Vercel deployment
         "https://*.up.railway.app",  # Allow Railway deployments
-        # Loveable development
-        "https://80688fe0-889d-4a8c-ab4e-ea2cd9b5e5d6.lovableproject.com",
-        "https://id-preview--80688fe0-889d-4a8c-ab4e-ea2cd9b5e5d6.lovable.app",
+        # Loveable development - allow any lovableproject.com and lovable.app subdomain
+        "https://*.lovableproject.com",
+        "https://*.lovable.app",
         
     ],
     allow_credentials=True,
