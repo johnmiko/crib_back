@@ -68,7 +68,7 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        # Local development
+        # Local development (exact matches)
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:5174",
@@ -79,16 +79,10 @@ app.add_middleware(
         "http://127.0.0.1:5174",
         "http://127.0.0.1:8080",
         "http://127.0.0.1:8081",
-        # Production domains
+        # Specific production domains
         "https://crib-sigma.vercel.app",
-        "https://*.vercel.app",  # Allow any Vercel deployment
-        "https://*.up.railway.app",  # Allow Railway deployments
-        # Loveable development - allow any lovableproject.com and lovable.app subdomain
-        "https://*.lovableproject.com",
-        "https://*.lovable.app",
-        "https://80688fe0-889d-4a8c-ab4e-ea2cd9b5e5d6.lovableproject.com",
-        "https://id-preview--80688fe0-889d-4a8c-ab4e-ea2cd9b5e5d6.lovable.app",        
     ],
+    allow_origin_regex=r"https://.*\.(lovableproject\.com|lovable\.app|vercel\.app|up\.railway\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
