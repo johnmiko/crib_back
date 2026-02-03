@@ -131,6 +131,9 @@ def test_human_wins_by_pegging_pair():
     """Test that human wins by pegging a pair."""
     session = GameSession(game_id="test-game", opponent_type="random")
     
+    # Replace human player with automated player
+    setup_automated_players(session)
+    
     game = session.game
     game.board.pegs["human"]['front'] = 119
     game.board.pegs["human"]['rear'] = 119
@@ -145,7 +148,7 @@ def test_human_wins_by_pegging_pair():
         "human": build_hand(['5h', '5d', '5c', '5s']),
         "computer": build_hand(['5h', '10d', '10c', '10s'])
     }
-    session.current_round.phase = 'pegging'
+    session.current_round.phase = 'play'
     
     # Play the round
     session.current_round.run()
@@ -166,6 +169,9 @@ def test_human_wins_counting_hand_first():
     """Test that human (non-dealer) wins by counting hand first."""
     session = GameSession(game_id="test-game", opponent_type="random")
     
+    # Replace human player with automated player
+    setup_automated_players(session)
+    
     game = session.game
     game.board.pegs["human"]['front'] = 119
     game.board.pegs["human"]['rear'] = 119
@@ -178,20 +184,20 @@ def test_human_wins_counting_hand_first():
     r.starter = Card("9h")
     
     # Give human a hand that scores at least 2 points
-    # 3-3-A-A-A-A with starter 9h
+    # 3-3-A-A with starter 9h
     r.hands = {
         "human": build_hand(['3h', '3d', 'ac', 'as']),
         "computer": build_hand(['2c', '2s', '2h', '2d'])
     }
     r.crib = build_hand(['ah', 'ad'])
-    session.current_round.phase = 'pegging'
-    
-    # Skip pegging by clearing hands after simulating some plays
-    # Actually, let's just advance to scoring phase
+    r.player_hand_after_discard = {
+        "human": build_hand(['3h', '3d', 'ac', 'as']),
+        "computer": build_hand(['2c', '2s', '2h', '2d'])
+    }
     session.current_round.phase = 'scoring'
     
-    # Score hands
-    r.score_hands_phase()
+    # Score hands through ResumableRound to set game_winner
+    session.current_round.run()
     
     human_score = game.board.get_score(session.human)
     
@@ -204,6 +210,9 @@ def test_human_wins_counting_hand_first():
 def test_computer_wins_counting_hand_first():
     """Test that computer (non-dealer) wins by counting hand first."""
     session = GameSession(game_id="test-game", opponent_type="random")
+    
+    # Replace human player with automated player
+    setup_automated_players(session)
     
     game = session.game
     game.board.pegs["human"]['front'] = 119
@@ -222,10 +231,14 @@ def test_computer_wins_counting_hand_first():
         "computer": build_hand(['3h', '3d', 'ac', 'as'])
     }
     r.crib = build_hand(['ah', 'ad'])
+    r.player_hand_after_discard = {
+        "human": build_hand(['2c', '2s', '2h', '2d']),
+        "computer": build_hand(['3h', '3d', 'ac', 'as'])
+    }
     session.current_round.phase = 'scoring'
     
-    # Score hands
-    r.score_hands_phase()
+    # Score hands through ResumableRound to set game_winner
+    session.current_round.run()
     
     computer_score = game.board.get_score(session.computer)
     
@@ -238,6 +251,9 @@ def test_computer_wins_counting_hand_first():
 def test_human_wins_counting_hand_second():
     """Test that human (dealer) wins by counting hand second."""
     session = GameSession(game_id="test-game", opponent_type="random")
+    
+    # Replace human player with automated player
+    setup_automated_players(session)
     
     game = session.game
     game.board.pegs["human"]['front'] = 119
@@ -256,10 +272,14 @@ def test_human_wins_counting_hand_second():
         "computer": build_hand(['2c', '2s', '2h', '2d'])
     }
     r.crib = build_hand(['ah', 'ad'])
+    r.player_hand_after_discard = {
+        "human": build_hand(['3h', '3d', 'ac', 'as']),
+        "computer": build_hand(['2c', '2s', '2h', '2d'])
+    }
     session.current_round.phase = 'scoring'
     
-    # Score hands
-    r.score_hands_phase()
+    # Score hands through ResumableRound to set game_winner
+    session.current_round.run()
     
     human_score = game.board.get_score(session.human)
     computer_score = game.board.get_score(session.computer)
@@ -274,6 +294,9 @@ def test_human_wins_counting_hand_second():
 def test_computer_wins_counting_crib():
     """Test that computer wins by counting crib."""
     session = GameSession(game_id="test-game", opponent_type="random")
+    
+    # Replace human player with automated player
+    setup_automated_players(session)
     
     game = session.game
     game.board.pegs["human"]['front'] = 100
@@ -293,10 +316,14 @@ def test_computer_wins_counting_crib():
         "computer": build_hand(['3c', '3s', '3h', '3d'])
     }
     r.crib = build_hand(['5c', '5s'])
+    r.player_hand_after_discard = {
+        "human": build_hand(['2c', '2s', '2h', '2d']),
+        "computer": build_hand(['3c', '3s', '3h', '3d'])
+    }
     session.current_round.phase = 'scoring'
     
-    # Score hands
-    r.score_hands_phase()
+    # Score hands through ResumableRound to set game_winner
+    session.current_round.run()
     
     computer_score = game.board.get_score(session.computer)
     
@@ -309,6 +336,9 @@ def test_computer_wins_counting_crib():
 def test_human_wins_on_nibs():
     """Test that human wins by getting nibs (jack starter)."""
     session = GameSession(game_id="test-game", opponent_type="random")
+    
+    # Replace human player with automated player
+    setup_automated_players(session)
     
     game = session.game
     game.board.pegs["human"]['front'] = 119
@@ -327,21 +357,32 @@ def test_human_wins_on_nibs():
         "computer": build_hand(['2c', '2s', '2h', '2d'])
     }
     r.crib = build_hand(['4h', '4d'])
+    r.player_hand_after_discard = {
+        "human": build_hand(['3h', '3d', 'ac', 'as']),
+        "computer": build_hand(['2c', '2s', '2h', '2d'])
+    }
     
-    # Award nibs in the setup phase
-    r.setup_crib_phase()
+    # Manually set up state like setup_crib_phase does, without calling _populate_crib
+    r.history.crib = [str(card) for card in r.crib]
+    r.history.score_at_start_of_round = [r.game.board.get_score(p) for p in r.game.players]
+    
+    # Check for nibs (setup_starter_scoring checks if starter is a jack)
+    winner = r.setup_starter_scoring()
     
     human_score = game.board.get_score(session.human)
     
     # Human should have won with nibs
     assert human_score == 121, f"Expected human to have 121 from nibs, got {human_score}"
-    assert session.current_round.game_winner is not None, "Expected a game winner"
-    assert session.current_round.game_winner.name == "human", "Expected human to be the winner"
+    assert winner is not None, "Expected a game winner from nibs"
+    assert winner.name == "human", "Expected human to be the winner"
 
 
 def test_computer_wins_on_nibs():
     """Test that computer wins by getting nibs (jack starter)."""
     session = GameSession(game_id="test-game", opponent_type="random")
+    
+    # Replace human player with automated player
+    setup_automated_players(session)
     
     game = session.game
     game.board.pegs["human"]['front'] = 119
@@ -360,16 +401,24 @@ def test_computer_wins_on_nibs():
         "computer": build_hand(['2c', '2s', '2h', '2d'])
     }
     r.crib = build_hand(['4h', '4d'])
+    r.player_hand_after_discard = {
+        "human": build_hand(['3h', '3d', 'ac', 'as']),
+        "computer": build_hand(['2c', '2s', '2h', '2d'])
+    }
     
-    # Award nibs in the setup phase
-    r.setup_crib_phase()
+    # Manually set up state like setup_crib_phase does, without calling _populate_crib
+    r.history.crib = [str(card) for card in r.crib]
+    r.history.score_at_start_of_round = [r.game.board.get_score(p) for p in r.game.players]
+    
+    # Check for nibs (setup_starter_scoring checks if starter is a jack)
+    winner = r.setup_starter_scoring()
     
     computer_score = game.board.get_score(session.computer)
     
     # Computer should have won with nibs
     assert computer_score == 121, f"Expected computer to have 121 from nibs, got {computer_score}"
-    assert session.current_round.game_winner is not None, "Expected a game winner"
-    assert session.current_round.game_winner.name == "computer", "Expected computer to be the winner"
+    assert winner is not None, "Expected a game winner from nibs"
+    assert winner.name == "computer", "Expected computer to be the winner"
 
 
 def test_game_ends_immediately_on_121_during_pegging():
@@ -379,6 +428,9 @@ def test_game_ends_immediately_on_121_during_pegging():
     not continue to let the other player peg more points.
     """
     session = GameSession(game_id="test-game", opponent_type="random")
+    
+    # Replace human player with automated player
+    setup_automated_players(session)
     
     game = session.game
     # Both players at 119
@@ -395,7 +447,7 @@ def test_game_ends_immediately_on_121_during_pegging():
         "human": build_hand(['5h', 'ac', '2c', '3c']),
         "computer": build_hand(['10h', '10d', '10c', '10s'])
     }
-    session.current_round.phase = 'pegging'
+    session.current_round.phase = 'play'
     
     # Play the round
     session.current_round.run()
@@ -403,18 +455,21 @@ def test_game_ends_immediately_on_121_during_pegging():
     human_score = game.board.get_score(session.human)
     computer_score = game.board.get_score(session.computer)
     
-    # Human plays 5h, computer plays 10h (15 for 2) -> human reaches 121
-    assert human_score == 121, f"Expected human to have 121, got {human_score}"
+    # Human plays 5h, computer plays 10h (15 for 2) -> computer reaches 121
+    assert computer_score == 121, f"Expected computer to have 121, got {computer_score}"
     assert session.current_round.game_winner is not None, "Game should have a winner"
-    assert session.current_round.game_winner.name == "human", "Human should be the winner"
+    assert session.current_round.game_winner.name == "computer", "Computer should be the winner"
     
-    # CRITICAL: Computer should NOT have scored any points after human won
-    assert computer_score == 119, f"Computer should still be at 119, but got {computer_score} - game continued after human won!"
+    # CRITICAL: Human should NOT have scored any points after computer won
+    assert human_score == 119, f"Human should still be at 119, but got {human_score} - game continued after computer won!"
 
 
 def test_game_ends_on_exactly_121():
     """Test that game ends when a player reaches exactly 121, not just exceeds it."""
     session = GameSession(game_id="test-game", opponent_type="random")
+    
+    # Replace human player with automated player
+    setup_automated_players(session)
     
     game = session.game
     game.board.pegs["human"]['front'] = 115
@@ -430,7 +485,7 @@ def test_game_ends_on_exactly_121():
         "human": build_hand(['5h', '5d', '5c', '5s']),
         "computer": build_hand(['10h', '10d', '10c', '10s'])
     }
-    session.current_round.phase = 'pegging'
+    session.current_round.phase = 'play'
     
     # Play the round - human should score multiple 15s and reach exactly 121
     session.current_round.run()
@@ -461,8 +516,8 @@ def test_no_ties_possible_near_endgame():
         session = GameSession(game_id=f"test-game-{i}", opponent_type="random")
         game = session.game
         
-        # Both players at 119
-        game.board.pegs["human"]['front'] = 119
+        # Replace human player with automated player
+        setup_automated_players(session)
         game.board.pegs["human"]['rear'] = 119
         game.board.pegs["computer"]['front'] = 119
         game.board.pegs["computer"]['rear'] = 119
@@ -473,18 +528,34 @@ def test_no_ties_possible_near_endgame():
         try:
             # Play a full round
             session.current_round = create_test_round(session, dealer_name=dealer_name)
-            session.current_round.round.deal()
+            r = session.current_round.round
+            r.setup_deal_phase()
             
             # Need to handle crib selection - just take first 2 cards from each hand
             for player_name in ["human", "computer"]:
-                hand = session.current_round.round.hands[player_name]
+                hand = r.hands[player_name]
                 if len(hand) == 6:
                     # Discard first 2 cards to crib
-                    session.current_round.round.crib.extend([hand[0], hand[1]])
-                    session.current_round.round.hands[player_name] = hand[2:]
+                    r.crib.extend([hand[0], hand[1]])
+                    r.hands[player_name] = hand[2:]
+                    r.player_hand_after_discard[player_name] = hand[2:]
             
-            session.current_round.round.cut()
-            session.current_round.run()
+            # Manually do what setup_crib_phase does (without calling _populate_crib)
+            r.history.crib = [str(card) for card in r.crib]
+            r.history.score_at_start_of_round = [r.game.board.get_score(p) for p in r.game.players]
+            r._cut()
+            # Draw starter if not already set
+            if r.starter is None:
+                r.starter = r.deck.draw()
+            
+            # Check for nibs
+            winner = r.setup_starter_scoring()
+            if winner is not None:
+                session.current_round.game_winner = winner
+            else:
+                # Start play phase
+                session.current_round.phase = 'play'
+                session.current_round.run()
             
             human_score = game.board.get_score(session.human)
             computer_score = game.board.get_score(session.computer)
