@@ -82,7 +82,7 @@ app.add_middleware(
         # Specific production domains
         "https://crib-sigma.vercel.app",
     ],
-    allow_origin_regex=r"https://.*\.(lovableproject\.com|lovable\.app|vercel\.app|up\.railway\.app)",
+    allow_origin_regex=r"https://.*\.(lovableproject\.com|lovable\.app|lovable\.dev|vercel\.app|up\.railway\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -117,8 +117,9 @@ class APIPlayer(BasePlayer):
             return selection
         raise AwaitingPlayerInput(msg, cards, n_cards)
     
-    def select_crib_cards(self, hand, dealer_is_self, your_score, opponent_score):
+    def select_crib_cards(self, player_state, round_state):
         """Select cards for the crib."""
+        hand = player_state.hand
         cards_selected = []
         while len(cards_selected) < 2:
             selection = self.get_input("Select 2 cards: ", hand, 2)
@@ -129,8 +130,9 @@ class APIPlayer(BasePlayer):
                 cards_selected.append(hand[idx - 1])
         return cards_selected
     
-    def select_card_to_play(self, hand, table, crib, count=0):
+    def select_card_to_play(self, player_state, round_state):
         """Select a card to play."""
+        hand = player_state.hand
         if not hand:
             return None
         selection = self.get_input("Select a card: ", hand, 1)
@@ -151,16 +153,13 @@ class StrategyPlayer(BasePlayer):
         super().__init__(name)
         self.strategy = strategy
     
-    def select_crib_cards(self, hand, dealer_is_self=True, your_score=None, opponent_score=None):
-        # Strategy only needs the hand
-        return self.strategy.select_crib_cards(hand=hand, dealer_is_self=dealer_is_self)
+    def select_crib_cards(self, player_state, round_state):
+        # Delegate to strategy (which is actually a player with the new API)
+        return self.strategy.select_crib_cards(player_state, round_state)
     
-    def select_card_to_play(self, hand, table, crib, count=0):
-        # Extract cards from table (table contains dicts with 'player' and 'card' keys)
-        table_cards = [entry['card'] if isinstance(entry, dict) else entry for entry in table]
-        # Use provided count if given, otherwise compute from table
-        table_value = count if count else sum(c.get_value() for c in table_cards)
-        return self.strategy.select_card_to_play(hand, table_cards, table_value, crib)
+    def select_card_to_play(self, player_state, round_state):
+        # Delegate to strategy (which is actually a player with the new API)
+        return self.strategy.select_card_to_play(player_state, round_state)
 
 
 def card_to_data(card: Card) -> CardData:
@@ -278,12 +277,30 @@ class ResumableRound:
                         except Exception:
                             seq_cards = ""
                         # logger.debug(f"[PLAY] Next: {p} | seq=[{seq_cards}] | value={_get_table_value(r.table, self.sequence_start_idx)} | hand={r.hands.get(p.name, [])}")
-                        card = p.select_card_to_play(
+                        
+                        # Build state objects for the player
+                        from cribbage.state import PlayerState, RoundState
+                        
+                        # Get table cards (extract just cards from table dicts)
+                        table_cards = [m['card'] for m in r.table[self.sequence_start_idx:]]
+                        all_played_cards = [m['card'] for m in r.table]
+                        
+                        player_state = PlayerState(
                             hand=r.hands[p.name],
-                            table=r.table[self.sequence_start_idx:],
+                            score=r.game.board.get_score(p),
+                            is_dealer=(p == r.dealer)
+                        )
+                        
+                        round_state = RoundState(
+                            starter_card=r.starter,
+                            count=_get_table_value(r.table, self.sequence_start_idx),
+                            table_cards=table_cards,
+                            all_played_cards=all_played_cards,
                             crib=r.crib,
-                            count=_get_table_value(r.table, self.sequence_start_idx)
-                        )  # May raise AwaitingPlayerInput
+                            dealer_name=r.dealer.name
+                        )
+                        
+                        card = p.select_card_to_play(player_state, round_state)  # May raise AwaitingPlayerInput
                         
                         if card is None or card.get_value() + _get_table_value(r.table, self.sequence_start_idx) > 31:
                             logger.debug(f"[GO] {p.name} cannot play or chose go (table_value={_get_table_value(r.table, self.sequence_start_idx)})")
