@@ -7,9 +7,10 @@ from cribbage.player import HumanPlayer, RandomPlayer
 
 def main():
     players = [HumanPlayer("You"), RandomPlayer("Computer")]
-    game = CribbageGame(players=players)
+    game = CribbageGame(players=players, fast_mode=False)
     game.start()
 
 
 if __name__ == "__main__":
     main()
+

@@ -507,7 +507,7 @@ class GameSession:
         # Generate a seed for the game for reproducibility
         self.game_seed = random.randint(0, 2**32 - 1)
         # Don't copy players so we can modify their state (pending_selection)
-        self.game = CribbageGame(players=[self.human, self.computer], copy_players=False, seed=self.game_seed)
+        self.game = CribbageGame(players=[self.human, self.computer], copy_players=False, seed=self.game_seed, fast_mode=False)
         self.current_round: Optional[ResumableRound] = None
         self.waiting_for: Optional[ActionType] = None
         self.message: str = ""
@@ -1052,3 +1052,4 @@ def get_game_history_endpoint(user_id: str, opponent_id: Optional[str] = None, l
         "opponent_id": opponent_id,
         "games": history
     }
+

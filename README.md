@@ -71,3 +71,12 @@ Several sample Player classes are provided in the *player.py* module.
 * **HumanPlayer:** allows a human to play by presenting a text-based representation of the cribbage game via stdout and
   prompting the user for decisions
 
+### Hard Opponent Data ###
+
+The hard opponent requires a SQLite file with `hand1` and `crib1` tables.
+Build it in `crib_engine`:
+`.\.venv\Scripts\python.exe .\scripts\build_hand_crib_db.py`
+Then copy it into `crib_back`:
+`.\.venv\Scripts\python.exe .\scripts\copy_hand_crib_db.py`
+Set `HAND_CRIB_DB_PATH` to `data/hand_crib_stats.sqlite`.
+
