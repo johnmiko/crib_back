@@ -4,6 +4,7 @@ import numpy as np
 import joblib
 from abc import ABC, abstractmethod
 from typing import List
+import inspect
 from pathlib import Path
 from itertools import combinations
 
@@ -13,6 +14,7 @@ from cribbage.players.medium_player import MediumPlayer
 from cribbage.players.hard_player import HardPlayer
 from cribbage.players.random_player import RandomPlayer
 from cribbage.players.play_first_card_player import PlayFirstCardPlayer
+from cribbage.players.expert_player import ExpertPlayer
 
 
 class OpponentStrategy(ABC):
@@ -370,9 +372,10 @@ class MyrmidonOpponent(OpponentStrategy):
 
 # Registry of available opponents
 OPPONENT_REGISTRY = {
-    "medium": MediumPlayer,
     "beginner": BeginnerPlayer,
+    "medium": MediumPlayer,
     "hard": HardPlayer,
+    "expert": ExpertPlayer,
     "random": RandomPlayer,
     "play first card": PlayFirstCardPlayer,
     # "greedy": GreedyOpponent,
@@ -381,6 +384,15 @@ OPPONENT_REGISTRY = {
     # "deeppeg": DeepPegOpponent,
     # "myrmidon": MyrmidonOpponent,
     # "bestai": BestAIOpponent,
+}
+
+OPPONENT_DESCRIPTIONS = {
+    "beginner": "Plays simple, safe choices. Good for learning the rules.",
+    "medium": "Makes reasonable discards and pegging plays with basic heuristics.",
+    "hard": "Stronger heuristics for discards and pegging; a solid challenge.",
+    "expert": "Hard discarding with model-based pegging (strongest available).",
+    "random": "Random legal plays. Great for testing.",
+    "play first card": "Always plays the first available card in hand.",
 }
 
 
@@ -399,6 +411,16 @@ def get_opponent_strategy(opponent_type: str = "random") -> OpponentStrategy:
     if opponent_type not in OPPONENT_REGISTRY:
         raise ValueError(f"Unknown opponent type: {opponent_type}. Available: {list(OPPONENT_REGISTRY.keys())}")
     return OPPONENT_REGISTRY[opponent_type]()
+
+
+def get_opponent_description(opponent_type: str, strategy: OpponentStrategy) -> str:
+    """Resolve a human-readable description for an opponent type."""
+    desc_attr = getattr(strategy, "description", None)
+    if isinstance(desc_attr, str):
+        return desc_attr
+    raise ValueError(
+        f"Opponent '{opponent_type}' is missing a 'description' attribute."
+    )
 
 
 def list_opponent_types() -> List[str]:

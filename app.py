@@ -12,7 +12,7 @@ from cribbage.players.base_player import BasePlayer
 from cribbage.players.random_player import RandomPlayer
 from cribbage.models import ActionType, GameStateResponse, PlayerAction, CardData
 from cribbage.playingcards import Card, Deck
-from crib_api.opponents import get_opponent_strategy, list_opponent_types, OpponentStrategy
+from crib_api.opponents import get_opponent_strategy, list_opponent_types, get_opponent_description, OpponentStrategy
 from database import init_db, record_match_result, get_user_stats, get_game_history as db_get_game_history, upsert_google_user
 import os
 from google.oauth2 import id_token
@@ -939,7 +939,8 @@ def get_opponents():
         strategy = get_opponent_strategy(opponent_type)
         opponents.append({
             "id": opponent_type,
-            "name": strategy.get_name()
+            "name": strategy.get_name(),
+            "description": get_opponent_description(opponent_type, strategy),
         })
     return {"opponents": opponents}
 
