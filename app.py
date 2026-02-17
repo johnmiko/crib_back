@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 import uuid
 import random
 
-from cribbage.cribbageround import RoundHistory
+from cribbage.cribbageround import RoundHistory, PlayRecord
 from cribbage.cribbagegame import CribbageGame, CribbageRound
 from cribbage.players.base_player import BasePlayer
 from cribbage.players.random_player import RandomPlayer
@@ -24,6 +24,7 @@ from logging.handlers import RotatingFileHandler
 # Configure logging to write to file and console
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+logger.propagate = False
 
 # File handler with rotation (10MB max, keep 3 backups)
 file_handler = RotatingFileHandler(
@@ -304,6 +305,8 @@ class ResumableRound:
                         
                         if card is None or card.get_value() + _get_table_value(r.table, self.sequence_start_idx) > 31:
                             logger.debug(f"[GO] {p.name} cannot play or chose go (table_value={_get_table_value(r.table, self.sequence_start_idx)})")
+                            # Record explicit non-scoring "go" so frontend can surface it in pegging phase.
+                            r._record_non_scoring_event(p, "go", card=None, sequence_start_idx=self.sequence_start_idx)
                             self.players_said_go.append(p)
                             # self.active_players.remove(p)
                         else:
@@ -311,10 +314,34 @@ class ResumableRound:
                             new_value = current_value + card.get_value()
                             logger.info(f"[PLAY] {p.name} plays {card} (table: {current_value} -> {new_value})")
                             r.table.append({'player': p, 'card': card})
+                            if r.play_record is not None:
+                                r.play_record.append(
+                                    PlayRecord(
+                                        description=f"{p.name}: Plays {card}",
+                                        full_table=[m['card'] for m in r.table],
+                                        active_table=[m['card'] for m in r.table[self.sequence_start_idx:]],
+                                        table_count=_get_table_value(r.table, self.sequence_start_idx),
+                                        player_name=p.name,
+                                        card=card,
+                                        hand=r.hands[p.name][:],
+                                    )
+                                )
                             if new_value == 31:
                                 self.pegging_scores[p] += 1
                                 # Peg the point FIRST, then log with updated scores
                                 winner = r.game.board.peg(p, 1)
+                                if r.play_record is not None:
+                                    r.play_record.append(
+                                        PlayRecord(
+                                            description=f"{p.name}: 31 for 1",
+                                            full_table=[m['card'] for m in r.table],
+                                            active_table=[m['card'] for m in r.table[self.sequence_start_idx:]],
+                                            table_count=_get_table_value(r.table, self.sequence_start_idx),
+                                            player_name=p.name,
+                                            card=None,
+                                            hand=r.hands[p.name][:],
+                                        )
+                                    )
                                 scores = r.game.board.get_scores()
                                 logger.info(f"[SCORE] {p.name} scores 1 for reaching 31. Scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
                                 if winner is not None:
@@ -332,6 +359,18 @@ class ResumableRound:
                                 self.pegging_scores[p] += score
                                 self.pegging_rounds_count += 1
                                 winner = r.game.board.peg(p, score)
+                                if r.play_record is not None:
+                                    r.play_record.append(
+                                        PlayRecord(
+                                            description=f"{p.name}: {description}",
+                                            full_table=[m['card'] for m in r.table],
+                                            active_table=[m['card'] for m in r.table[self.sequence_start_idx:]],
+                                            table_count=_get_table_value(r.table, self.sequence_start_idx),
+                                            player_name=p.name,
+                                            card=None,
+                                            hand=r.hands[p.name][:],
+                                        )
+                                    )
                                 scores = r.game.board.get_scores()
                                 logger.info(f"[SCORE] {p.name} scores {score} points: {description}. Scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
                                 if winner is not None:
@@ -480,6 +519,9 @@ def _format_play_event(description: str) -> str:
     else:
         player_display = player_name.capitalize()
     
+    # "Go for 1" is clearer as-is, not "scored Go for 1"
+    if action.lower().startswith("go for "):
+        return f"{player_display} {action}"
     # Check if this is a scoring event (contains "for")
     if " for " in action.lower():
         return f"{player_display} scored {action}"
@@ -600,9 +642,9 @@ class GameSession:
         
         # Get most recent play events (last 3) for display
         recent_events = []
-        if self.current_round and hasattr(self.current_round, 'play_record'):
-            # Get last 3 events, reversed so most recent is first
-            for record in reversed(self.current_round.play_record[-3:]):
+        if self.current_round and self.current_round.round.play_record:
+            # Get last 3 events, reversed so most recent is first.
+            for record in reversed(self.current_round.round.play_record[-3:]):
                 formatted = _format_play_event(record.description)
                 recent_events.append(formatted)
         
@@ -629,7 +671,7 @@ class GameSession:
             pegging_scores=self.pegging_scores if hasattr(self, 'pegging_scores') else None,
             recent_play_events=recent_events if recent_events else None,
         )
-        logger.info(f"game_state: {game_state_response}")
+        logger.debug(f"game_state: {game_state_response}")
         return game_state_response        
 
     def start_new_round(self):
