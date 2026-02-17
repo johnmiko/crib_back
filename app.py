@@ -327,13 +327,13 @@ class ResumableRound:
                                     )
                                 )
                             if new_value == 31:
-                                self.pegging_scores[p] += 1
-                                # Peg the point FIRST, then log with updated scores
-                                winner = r.game.board.peg(p, 1)
+                                # Reaching 31 is worth 2 and immediately ends the current sequence.
+                                self.pegging_scores[p] += 2
+                                winner = r.game.board.peg(p, 2)
                                 if r.play_record is not None:
                                     r.play_record.append(
                                         PlayRecord(
-                                            description=f"{p.name}: 31 for 1",
+                                            description=f"{p.name}: 31 for 2",
                                             full_table=[m['card'] for m in r.table],
                                             active_table=[m['card'] for m in r.table[self.sequence_start_idx:]],
                                             table_count=_get_table_value(r.table, self.sequence_start_idx),
@@ -343,12 +343,18 @@ class ResumableRound:
                                         )
                                     )
                                 scores = r.game.board.get_scores()
-                                logger.info(f"[SCORE] {p.name} scores 1 for reaching 31. Scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
+                                logger.info(f"[SCORE] {p.name} scores 2 for reaching 31. Scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
+                                r.hands[p.name].remove(card)
+                                r.most_recent_player = p
+                                # Clear go state and start a fresh sequence immediately.
+                                self.players_said_go = []
+                                self.sequence_start_idx = len(r.table)
                                 if winner is not None:
                                     self.game_winner = winner
                                     self.win_reason = f"{winner.name} won by pegging (31)!"
                                     logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
                                     break
+                                continue
                             r.hands[p.name].remove(card)
                             r.most_recent_player = p  # Track last player for go/31 scoring
                             # if not r.hands[p.name]:
@@ -567,18 +573,27 @@ class GameSession:
         # Stats tracking for match history
         self.total_points_pegged_human = 0
         self.total_points_pegged_computer = 0
-        self.pegging_rounds = 0
+        self.total_rounds_completed = 0
+        self.high_points_pegged_human = 0
+        self.high_points_pegged_computer = 0
         self.total_hand_score_human = 0
         self.total_hand_score_computer = 0
         self.human_hands_count = 0
         self.computer_hands_count = 0
+        self.high_hand_score_human = 0
+        self.high_hand_score_computer = 0
         self.total_crib_score_human = 0
         self.total_crib_score_computer = 0
         self.human_dealer_count = 0
         self.computer_dealer_count = 0
+        self.high_crib_score_human = 0
+        self.high_crib_score_computer = 0
+        self.total_cut_score_human = 0
+        self.total_cut_score_computer = 0
         self.table_history = []
         self.pegging_scores = None  # Scores after pegging, before hand counting
         self.win_reason: Optional[str] = None  # Track how the game was won
+        self.game_stats: Optional[Dict[str, Any]] = None  # Match stats for UI/DB
         
         logger.info(f"[NEW GAME] Game {game_id} started. Opponent: {opponent_type}, Seed: {self.game_seed}")
         
@@ -670,6 +685,7 @@ class GameSession:
             round_summary=self.last_round_summary,
             pegging_scores=self.pegging_scores if hasattr(self, 'pegging_scores') else None,
             recent_play_events=recent_events if recent_events else None,
+            game_stats=self.game_stats,
         )
         logger.debug(f"game_state: {game_state_response}")
         return game_state_response        
@@ -712,6 +728,63 @@ class GameSession:
             avg_crib_score = self.total_crib_score_human / self.human_dealer_count
         
         return avg_points_pegged, avg_hand_score, avg_crib_score
+
+    def _build_game_stats(self) -> Dict[str, Any]:
+        """Build per-match stats for both players for end-of-game UI."""
+        your_pegging_avg = (
+            self.total_points_pegged_human / self.total_rounds_completed
+            if self.total_rounds_completed > 0 else 0.0
+        )
+        computer_pegging_avg = (
+            self.total_points_pegged_computer / self.total_rounds_completed
+            if self.total_rounds_completed > 0 else 0.0
+        )
+        your_hand_avg = (
+            self.total_hand_score_human / self.human_hands_count
+            if self.human_hands_count > 0 else 0.0
+        )
+        computer_hand_avg = (
+            self.total_hand_score_computer / self.computer_hands_count
+            if self.computer_hands_count > 0 else 0.0
+        )
+        your_crib_avg = (
+            self.total_crib_score_human / self.human_dealer_count
+            if self.human_dealer_count > 0 else 0.0
+        )
+        computer_crib_avg = (
+            self.total_crib_score_computer / self.computer_dealer_count
+            if self.computer_dealer_count > 0 else 0.0
+        )
+        avg_pegging_diff = your_pegging_avg - computer_pegging_avg
+
+        return {
+            "you": {
+                "pegging_average": round(your_pegging_avg, 2),
+                "pegging_high": self.high_points_pegged_human,
+                "pegging_total": self.total_points_pegged_human,
+                "hand_average": round(your_hand_avg, 2),
+                "hand_high": self.high_hand_score_human,
+                "hand_total": self.total_hand_score_human,
+                "crib_average": round(your_crib_avg, 2),
+                "crib_high": self.high_crib_score_human,
+                "crib_total": self.total_crib_score_human,
+                "cut_total": self.total_cut_score_human,
+            },
+            "computer": {
+                "pegging_average": round(computer_pegging_avg, 2),
+                "pegging_high": self.high_points_pegged_computer,
+                "pegging_total": self.total_points_pegged_computer,
+                "hand_average": round(computer_hand_avg, 2),
+                "hand_high": self.high_hand_score_computer,
+                "hand_total": self.total_hand_score_computer,
+                "crib_average": round(computer_crib_avg, 2),
+                "crib_high": self.high_crib_score_computer,
+                "crib_total": self.total_crib_score_computer,
+                "cut_total": self.total_cut_score_computer,
+            },
+            "rounds_played": self.total_rounds_completed,
+            "avg_pegging_diff": round(avg_pegging_diff, 2),
+        }
     
     def advance(self) -> GameStateResponse:
         """Advance the game until player input is needed."""
@@ -730,24 +803,25 @@ class GameSession:
             summary_hands: Dict[str, List[CardData]] = {}
             summary_points: Dict[str, int] = {}
             summary_breakdowns: Dict[str, List[Dict[str, Any]]] = {}
+            self.total_rounds_completed += 1
             
             # Track pegging scores from this round
             if hasattr(self.current_round, "pegging_scores"):
                 scores = getattr(self.current_round, "pegging_scores")
-                if self.human in scores:
-                    self.total_points_pegged_human += scores[self.human]
-                if self.computer in scores:
-                    self.total_points_pegged_computer += scores[self.computer]
-            if hasattr(self.current_round, "pegging_rounds_count"):
-                self.pegging_rounds += getattr(self.current_round, "pegging_rounds_count")
+                human_pegging = scores[self.human] if self.human in scores else 0
+                computer_pegging = scores[self.computer] if self.computer in scores else 0
+                self.total_points_pegged_human += human_pegging
+                self.total_points_pegged_computer += computer_pegging
+                self.high_points_pegged_human = max(self.high_points_pegged_human, human_pegging)
+                self.high_points_pegged_computer = max(self.high_points_pegged_computer, computer_pegging)
 
             # Only score hands and crib if hands were actually scored
             # (i.e., we didn't skip the scoring phase due to game ending during pegging)
             if self.current_round.hands_were_scored:
                 # Hands with starter for scoring context
                 for p in self.game.players:
-                    played_cards = [move['card'] for move in r.table if move['player'] == p]
-                    hand_cards = played_cards + ([r.starter] if r.starter else [])
+                    base_hand_cards = r.player_hand_after_discard.get(p.name, [])
+                    hand_cards = base_hand_cards + ([r.starter] if r.starter else [])
                     summary_hands[_to_frontend_name(p)] = [card_to_data(c) for c in hand_cards]
                     points, breakdown = r._score_hand_with_breakdown(hand_cards, is_crib=False)
                     summary_points[_to_frontend_name(p)] = points
@@ -757,9 +831,11 @@ class GameSession:
                     if p == self.human:
                         self.total_hand_score_human += points
                         self.human_hands_count += 1
+                        self.high_hand_score_human = max(self.high_hand_score_human, points)
                     else:
                         self.total_hand_score_computer += points
                         self.computer_hands_count += 1
+                        self.high_hand_score_computer = max(self.high_hand_score_computer, points)
 
                 # Crib
                 crib_cards = r.crib + ([r.starter] if r.starter else [])
@@ -772,15 +848,17 @@ class GameSession:
                 if r.dealer == self.human:
                     self.total_crib_score_human += crib_points
                     self.human_dealer_count += 1
+                    self.high_crib_score_human = max(self.high_crib_score_human, crib_points)
                 else:
                     self.total_crib_score_computer += crib_points
                     self.computer_dealer_count += 1
+                    self.high_crib_score_computer = max(self.high_crib_score_computer, crib_points)
             else:
                 # Game ended during pegging - don't score hands/crib
-                # Just show the cards that were played (for reference)
+                # Show each player's post-discard hand (+ starter) for review.
                 for p in self.game.players:
-                    played_cards = [move['card'] for move in r.table if move['player'] == p]
-                    hand_cards = played_cards + ([r.starter] if r.starter else [])
+                    base_hand_cards = r.player_hand_after_discard.get(p.name, [])
+                    hand_cards = base_hand_cards + ([r.starter] if r.starter else [])
                     summary_hands[_to_frontend_name(p)] = [card_to_data(c) for c in hand_cards]
                     summary_points[_to_frontend_name(p)] = 0
                     summary_breakdowns[_to_frontend_name(p)] = []
@@ -791,11 +869,19 @@ class GameSession:
                 summary_points['crib'] = 0
                 summary_breakdowns['crib'] = []
 
+            # Track cut score (nibs/heels): dealer gets 2 when the starter is Jack.
+            if r.starter and r.starter.rank == 'j':
+                if r.dealer == self.human:
+                    self.total_cut_score_human += 2
+                else:
+                    self.total_cut_score_computer += 2
+
             self.last_round_summary = {
                 'hands': summary_hands,
                 'points': summary_points,
                 'breakdowns': summary_breakdowns,
             }
+            self.game_stats = self._build_game_stats()
 
             # Check if game is over (someone reached 121)
             # Note: Don't set game_over yet - let user see round summary first
@@ -870,14 +956,27 @@ class GameSession:
                     if not self.match_recorded:
                         won = (p == self.human)
                         avg_points_pegged, avg_hand_score, avg_crib_score = self.calculate_game_stats()
+                        computer_avg_points_pegged = (
+                            self.total_points_pegged_computer / self.total_rounds_completed
+                            if self.total_rounds_completed > 0 else 0.0
+                        )
+                        avg_pegging_diff = avg_points_pegged - computer_avg_points_pegged
                         effective_user_id = self.user_id if self.user_id else "not_signed_in"
                         record_match_result(
                             effective_user_id,
                             self.opponent_type,
                             won,
                             average_points_pegged=avg_points_pegged,
+                            average_pegging_diff=avg_pegging_diff,
                             average_hand_score=avg_hand_score,
-                            average_crib_score=avg_crib_score
+                            average_crib_score=avg_crib_score,
+                            pegging_total=self.total_points_pegged_human,
+                            hand_total=self.total_hand_score_human,
+                            crib_total=self.total_crib_score_human,
+                            cut_total=self.total_cut_score_human,
+                            pegging_high=self.high_points_pegged_human,
+                            hand_high=self.high_hand_score_human,
+                            crib_high=self.high_crib_score_human,
                         )
                         self.match_recorded = True
                     break
@@ -1082,8 +1181,35 @@ def get_stats(user_id: str):
     """Get aggregated match statistics for a user."""
     stats = get_user_stats(user_id)
     if not stats:
-        return {"user_id": user_id, "stats": []}
-    return {"user_id": user_id, "stats": stats}
+        return {"user_id": user_id, "stats": [], "overall": None}
+
+    total_games = sum(int(s.get("total_games", 0)) for s in stats)
+    wins = sum(int(s.get("wins", 0)) for s in stats)
+    losses = sum(int(s.get("losses", 0)) for s in stats)
+    weighted = lambda key: (
+        sum(float(s.get(key, 0.0)) * int(s.get("total_games", 0)) for s in stats) / total_games
+        if total_games > 0 else 0.0
+    )
+
+    overall = {
+        "wins": wins,
+        "losses": losses,
+        "total_games": total_games,
+        "win_rate": (wins / total_games) if total_games > 0 else 0.0,
+        "avg_points_pegged": weighted("avg_points_pegged"),
+        "avg_pegging_diff": weighted("avg_pegging_diff"),
+        "avg_hand_score": weighted("avg_hand_score"),
+        "avg_crib_score": weighted("avg_crib_score"),
+        "avg_cut_score": weighted("avg_cut_score"),
+        "avg_pegging_total": weighted("avg_pegging_total"),
+        "avg_hand_total": weighted("avg_hand_total"),
+        "avg_crib_total": weighted("avg_crib_total"),
+        "max_pegging_high": max(int(s.get("max_pegging_high", 0)) for s in stats),
+        "max_hand_high": max(int(s.get("max_hand_high", 0)) for s in stats),
+        "max_crib_high": max(int(s.get("max_crib_high", 0)) for s in stats),
+    }
+
+    return {"user_id": user_id, "stats": stats, "overall": overall}
 
 
 @app.get("/stats/{user_id}/history")

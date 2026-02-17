@@ -76,6 +76,11 @@ def test_game_shows_round_summary_before_ending():
     assert final_state["game_over"] == True, "Game should be over after clicking continue"
     assert final_state["winner"] in ["you", "computer"], "There should be a winner"
     assert final_state["win_reason"] is not None, "Win reason should be present"
+    assert final_state["game_stats"] is not None, "Game stats should be present at game over"
+    assert "you" in final_state["game_stats"], "Game stats should include player side"
+    assert "computer" in final_state["game_stats"], "Game stats should include computer side"
+    assert "cut_total" in final_state["game_stats"]["you"], "Player stats should include cut_total"
+    assert "cut_total" in final_state["game_stats"]["computer"], "Computer stats should include cut_total"
     
     print(f"✓ Game correctly showed round summary before ending")
     print(f"  Winner: {final_state['winner']}")
