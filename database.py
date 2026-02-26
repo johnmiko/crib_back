@@ -33,6 +33,8 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(index=True, nullable=True)
     name: Mapped[str | None] = mapped_column(nullable=True)
     picture: Mapped[str | None] = mapped_column(nullable=True)
+    ad_free: Mapped[bool] = mapped_column(default=False)  # Future paid tier toggle
+    ad_status_source: Mapped[str | None] = mapped_column(nullable=True)  # e.g. "manual_test", "purchase"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
@@ -63,7 +65,33 @@ def init_db():
     """Initialize database tables."""
     if engine:
         Base.metadata.create_all(bind=engine)
+        _ensure_users_columns()
         _ensure_game_results_columns()
+
+
+def _ensure_users_columns():
+    """Best-effort additive schema upgrades for users table."""
+    if engine is None:
+        return
+
+    try:
+        inspector = inspect(engine)
+        if "users" not in inspector.get_table_names():
+            return
+
+        existing = {c["name"] for c in inspector.get_columns("users")}
+        ddl = {
+            "ad_free": "BOOLEAN DEFAULT FALSE",
+            "ad_status_source": "TEXT",
+        }
+
+        with engine.begin() as conn:
+            for col, col_type in ddl.items():
+                if col in existing:
+                    continue
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+    except Exception as e:
+        print(f"Warning: failed to ensure users columns: {e}")
 
 
 def _ensure_game_results_columns():
@@ -118,6 +146,80 @@ def upsert_google_user(user_id: str, email: Optional[str], name: Optional[str], 
         db.rollback()
         print(f"Error upserting user: {e}")
         return None
+    finally:
+        db.close()
+
+
+def get_ad_entitlement(user_id: Optional[str]) -> dict:
+    """Return ad entitlement for a user. Defaults to show ads."""
+    if not user_id or user_id == "not_signed_in":
+        return {
+            "user_id": user_id or "not_signed_in",
+            "ad_free": False,
+            "show_ads": True,
+            "source": "anonymous",
+        }
+
+    db = get_db()
+    if db is None:
+        return {
+            "user_id": user_id,
+            "ad_free": False,
+            "show_ads": True,
+            "source": "db_unavailable",
+        }
+
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            return {
+                "user_id": user_id,
+                "ad_free": False,
+                "show_ads": True,
+                "source": "default_user_not_found",
+            }
+        return {
+            "user_id": user_id,
+            "ad_free": bool(user.ad_free),
+            "show_ads": not bool(user.ad_free),
+            "source": user.ad_status_source or "stored_user",
+        }
+    except Exception as e:
+        print(f"Error getting ad entitlement: {e}")
+        return {
+            "user_id": user_id,
+            "ad_free": False,
+            "show_ads": True,
+            "source": "error_default",
+        }
+    finally:
+        db.close()
+
+
+def set_ad_entitlement(user_id: str, ad_free: bool, source: str = "manual_test") -> bool:
+    """Set ad entitlement for testing or future purchase fulfillment."""
+    if not user_id or user_id == "not_signed_in":
+        return False
+
+    db = get_db()
+    if db is None:
+        return False
+
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            user = User(id=user_id, ad_free=ad_free, ad_status_source=source)
+            db.add(user)
+        else:
+            user.ad_free = ad_free
+            user.ad_status_source = source
+            user.updated_at = datetime.utcnow()
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"Error setting ad entitlement: {e}")
+        return False
     finally:
         db.close()
 

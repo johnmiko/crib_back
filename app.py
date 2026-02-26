@@ -12,8 +12,22 @@ from cribbage.players.base_player import BasePlayer
 from cribbage.players.random_player import RandomPlayer
 from cribbage.models import ActionType, GameStateResponse, PlayerAction, CardData
 from cribbage.playingcards import Card, Deck
-from crib_api.opponents import get_opponent_strategy, list_opponent_types, get_opponent_description, OpponentStrategy
-from database import init_db, record_match_result, get_user_stats, get_game_history as db_get_game_history, upsert_google_user
+from crib_api.opponents import (
+    get_opponent_strategy,
+    list_opponent_types,
+    get_opponent_description,
+    get_opponent_name,
+    OpponentStrategy,
+)
+from database import (
+    init_db,
+    record_match_result,
+    get_user_stats,
+    get_game_history as db_get_game_history,
+    upsert_google_user,
+    get_ad_entitlement,
+    set_ad_entitlement,
+)
 import os
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -71,6 +85,10 @@ app.add_middleware(
     allow_origins=[
         # Local development (exact matches)
         "http://localhost:3000",
+        "http://localhost",
+        "https://localhost",
+        "capacitor://localhost",
+        "ionic://localhost",
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:8080",
@@ -665,9 +683,15 @@ class GameSession:
         
         # Scores mapped for frontend
         scores_dict = _map_scores_for_frontend(self.game)
+        action_required = (
+            ActionType.GAME_OVER
+            if self.game_over
+            else (self.waiting_for or ActionType.WAITING_FOR_COMPUTER)
+        )
+
         game_state_response = GameStateResponse(
             game_id=self.game_id,
-            action_required=self.waiting_for or ActionType.WAITING_FOR_COMPUTER,
+            action_required=action_required,
             message=self.message,
             your_hand=your_hand,
             computer_hand=computer_hand,
@@ -1021,6 +1045,11 @@ class GoogleAuthRequest(BaseModel):
     id_token: str
 
 
+class SetAdEntitlementRequest(BaseModel):
+    ad_free: bool
+    source: Optional[str] = "manual_test"
+
+
 
 def _make_card(rank_name: str, suit_name: str) -> Card:
     return Card(rank_name + suit_name)
@@ -1075,15 +1104,18 @@ def auth_google(req: GoogleAuthRequest):
 @app.get("/opponents")
 def get_opponents():
     """Get list of available opponent types."""
-    opponents = []
-    for opponent_type in list_opponent_types():
-        strategy = get_opponent_strategy(opponent_type)
-        opponents.append({
-            "id": opponent_type,
-            "name": strategy.get_name(),
-            "description": get_opponent_description(opponent_type, strategy),
-        })
-    return {"opponents": opponents}
+    try:
+        opponents = []
+        for opponent_type in list_opponent_types():
+            opponents.append({
+                "id": opponent_type,
+                "name": get_opponent_name(opponent_type),
+                "description": get_opponent_description(opponent_type),
+            })
+        return {"opponents": opponents}
+    except Exception as e:
+        logger.exception("Failed to load opponents list")
+        raise HTTPException(status_code=500, detail=f"Failed to load opponents: {e}")
 
 
 @app.get("/game/new")
@@ -1221,4 +1253,20 @@ def get_game_history_endpoint(user_id: str, opponent_id: Optional[str] = None, l
         "opponent_id": opponent_id,
         "games": history
     }
+
+
+@app.get("/ads/entitlement/{user_id}")
+def get_ads_entitlement(user_id: str):
+    """Get whether a user should see ads."""
+    return get_ad_entitlement(user_id)
+
+
+@app.post("/ads/entitlement/{user_id}")
+def set_ads_entitlement(user_id: str, req: SetAdEntitlementRequest):
+    """Set ad entitlement for test flow validation (manual/admin use)."""
+    ok = set_ad_entitlement(user_id=user_id, ad_free=req.ad_free, source=req.source or "manual_test")
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to update ad entitlement")
+    return get_ad_entitlement(user_id)
+
 

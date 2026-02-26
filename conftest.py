@@ -7,12 +7,20 @@ import sys
 from pathlib import Path
 import pytest
 
+# Add project-relative roots to sys.path so tests work after repo moves.
+# Layout expected:
+#   <crib>/crib_back/conftest.py
+#   <crib>/crib_engine/
+project_root = Path(__file__).resolve().parent
+crib_root = project_root.parent
+engine_root = crib_root / "crib_engine"
+
+for path in (project_root, engine_root):
+    path_str = str(path)
+    if path.exists() and path_str not in sys.path:
+        sys.path.insert(0, path_str)
+
 from cribbage.players.random_player import RandomPlayer as _RandomPlayer
-
-
-# Add the project root to sys.path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
 
 
 @pytest.fixture

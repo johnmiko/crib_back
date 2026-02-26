@@ -395,6 +395,15 @@ OPPONENT_DESCRIPTIONS = {
     "play first card": "Always plays the first available card in hand.",
 }
 
+OPPONENT_DISPLAY_NAMES = {
+    "beginner": "Beginner",
+    "medium": "Medium",
+    "hard": "Hard",
+    "expert": "Expert",
+    "random": "Random",
+    "play first card": "Play First Card",
+}
+
 
 def get_opponent_strategy(opponent_type: str = "random") -> OpponentStrategy:
     """Get an opponent strategy instance by type.
@@ -413,14 +422,22 @@ def get_opponent_strategy(opponent_type: str = "random") -> OpponentStrategy:
     return OPPONENT_REGISTRY[opponent_type]()
 
 
-def get_opponent_description(opponent_type: str, strategy: OpponentStrategy) -> str:
+def get_opponent_name(opponent_type: str, strategy: OpponentStrategy = None) -> str:
+    """Resolve a human-readable display name for an opponent type."""
+    if strategy is not None and hasattr(strategy, "get_name") and callable(strategy.get_name):
+        try:
+            return strategy.get_name()
+        except Exception:
+            pass
+    return OPPONENT_DISPLAY_NAMES.get(opponent_type, opponent_type.title())
+
+
+def get_opponent_description(opponent_type: str, strategy: OpponentStrategy = None) -> str:
     """Resolve a human-readable description for an opponent type."""
-    desc_attr = getattr(strategy, "description", None)
+    desc_attr = getattr(strategy, "description", None) if strategy is not None else None
     if isinstance(desc_attr, str):
         return desc_attr
-    raise ValueError(
-        f"Opponent '{opponent_type}' is missing a 'description' attribute."
-    )
+    return OPPONENT_DESCRIPTIONS.get(opponent_type, "No description available.")
 
 
 def list_opponent_types() -> List[str]:
