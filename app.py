@@ -440,13 +440,11 @@ class ResumableRound:
             if not self.history.score_after_pegging:
                 self.history.score_after_pegging = [r.game.board.get_score(p) for p in r.game.players]
             
-            # If game ended during pegging, skip scoring phase
-            if self.game_winner is not None:
-                self.phase = 'complete'
-                self.hands_were_scored = False  # Track that we skipped scoring
-            else:
-                self.phase = 'scoring'
-                self.hands_were_scored = True  # Track that we will score hands
+            # Always run full hand/crib scoring after pegging completes so the
+            # frontend can show a complete end-of-round summary, even if someone
+            # already reached 121 during pegging.
+            self.phase = 'scoring'
+            self.hands_were_scored = True
         
         if self.phase == 'scoring':
             logger.info(f"[SCORING PHASE] Counting hands. Non-dealer ({r.nondealer.name}) counts first.")
@@ -463,23 +461,21 @@ class ResumableRound:
                 self.win_reason = f"{winner.name} won by counting their hand (non-dealer)!"
                 logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
             
-            # Dealer's hand (only score if game not already won)
-            if self.game_winner is None:
-                winner = r.score_dealer_hand()
-                if winner is not None:
-                    self.game_winner = winner
-                    scores = r.game.board.get_scores()
-                    self.win_reason = f"{winner.name} won by counting their hand (dealer)!"
-                    logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
+            # Dealer's hand
+            winner = r.score_dealer_hand()
+            if winner is not None and self.game_winner is None:
+                self.game_winner = winner
+                scores = r.game.board.get_scores()
+                self.win_reason = f"{winner.name} won by counting their hand (dealer)!"
+                logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
             
-            # Crib (only score if game not already won)
-            if self.game_winner is None:
-                winner = r.score_crib()
-                if winner is not None:
-                    self.game_winner = winner
-                    scores = r.game.board.get_scores()
-                    self.win_reason = f"{winner.name} won by counting the crib!"
-                    logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
+            # Crib
+            winner = r.score_crib()
+            if winner is not None and self.game_winner is None:
+                self.game_winner = winner
+                scores = r.game.board.get_scores()
+                self.win_reason = f"{winner.name} won by counting the crib!"
+                logger.info(f"[GAME OVER] {self.win_reason} Final scores: {r.game.players[0].name}={scores[0]}, {r.game.players[1].name}={scores[1]}")
             
             logger.info(f"[SCORING COMPLETE] Final scores: {r.game.board.get_scores()}")
             self.phase = 'complete'
